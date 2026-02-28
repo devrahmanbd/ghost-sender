@@ -1,0 +1,327 @@
+providers:
+  gmail:
+    type: oauth2
+    name: Gmail
+    enabled: true
+    priority: 1
+    api_endpoint: https://gmail.googleapis.com/gmail/v1
+    oauth:
+      auth_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      scopes:
+        - https://www.googleapis.com/auth/gmail.send
+        - https://www.googleapis.com/auth/gmail.compose
+      client_id: ""
+      client_secret: ""
+      redirect_uri: http://localhost:8080/auth/callback
+    limits:
+      daily_limit: 500
+      per_minute: 10
+      per_hour: 100
+      burst: 5
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 25000000
+      max_recipients: 500
+      support_tracking: true
+      support_scheduling: false
+
+  workspace:
+    type: smtp
+    name: Google Workspace
+    enabled: true
+    priority: 2
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 2000
+      per_minute: 30
+      per_hour: 500
+      burst: 10
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 10
+      max_open: 20
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 25000000
+      max_recipients: 500
+      support_tracking: true
+      support_scheduling: false
+
+  yahoo:
+    type: smtp
+    name: Yahoo Mail
+    enabled: true
+    priority: 3
+    smtp:
+      host: smtp.mail.yahoo.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 500
+      per_minute: 10
+      per_hour: 100
+      burst: 5
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 5
+      max_open: 10
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 25000000
+      max_recipients: 100
+      support_tracking: false
+      support_scheduling: false
+
+  outlook:
+    type: smtp
+    name: Outlook
+    enabled: true
+    priority: 4
+    smtp:
+      host: smtp-mail.outlook.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 300
+      per_minute: 10
+      per_hour: 100
+      burst: 5
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 5
+      max_open: 10
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 20000000
+      max_recipients: 100
+      support_tracking: false
+      support_scheduling: false
+
+  hotmail:
+    type: smtp
+    name: Hotmail
+    enabled: true
+    priority: 5
+    smtp:
+      host: smtp.live.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 300
+      per_minute: 10
+      per_hour: 100
+      burst: 5
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 5
+      max_open: 10
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 20000000
+      max_recipients: 100
+      support_tracking: false
+      support_scheduling: false
+
+  icloud:
+    type: smtp
+    name: iCloud Mail
+    enabled: true
+    priority: 6
+    smtp:
+      host: smtp.mail.me.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 200
+      per_minute: 5
+      per_hour: 50
+      burst: 3
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 3
+      max_open: 5
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 20000000
+      max_recipients: 100
+      support_tracking: false
+      support_scheduling: false
+
+  custom_smtp:
+    type: smtp
+    name: Custom SMTP
+    enabled: false
+    priority: 10
+    smtp:
+      host: smtp.example.com
+      port: 587
+      encryption: starttls
+      auth_method: plain
+      require_auth: true
+    limits:
+      daily_limit: 1000
+      per_minute: 20
+      per_hour: 200
+      burst: 10
+    retry:
+      max_attempts: 3
+      base_delay: 5s
+      max_delay: 60s
+      exponential_backoff: true
+    timeout:
+      connection: 30s
+      read: 30s
+      write: 30s
+      idle: 300s
+    connection_pool:
+      enabled: true
+      max_idle: 10
+      max_open: 20
+      max_lifetime: 3600s
+    features:
+      support_html: true
+      support_attachments: true
+      max_attachment_size: 25000000
+      max_recipients: 500
+      support_tracking: false
+      support_scheduling: false
+
+health_check:
+  enabled: true
+  interval: 600s
+  timeout: 10s
+  check_smtp_connection: true
+  check_auth: true
+  failure_threshold: 3
+  success_threshold: 2
+
+connection_settings:
+  keep_alive: true
+  tcp_keep_alive: 60s
+  tls_min_version: 1.2
+  tls_handshake_timeout: 10s
+  verify_ssl: true
+  skip_cert_verification: false
+  enable_compression: false
+
+error_handling:
+  permanent_errors:
+    - 550
+    - 551
+    - 552
+    - 553
+    - 554
+  temporary_errors:
+    - 421
+    - 450
+    - 451
+    - 452
+  retry_on_timeout: true
+  retry_on_connection_refused: true
+  max_consecutive_failures: 5
+
+rate_limiting:
+  strategy: token_bucket
+  adaptive: true
+  backoff_on_error: true
+  backoff_multiplier: 2
+  max_backoff: 300s
+  recovery_time: 600s
+
+monitoring:
+  track_send_rate: true
+  track_error_rate: true
+  track_latency: true
+  track_success_rate: true
+  metrics_interval: 60s
+
+security:
+  store_credentials_encrypted: true
+  rotate_tokens: true
+  token_refresh_before_expiry: 300s
+  validate_recipient_domain: false
+  block_disposable_emails: false

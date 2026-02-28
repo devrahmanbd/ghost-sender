@@ -1,0 +1,298 @@
+sender_name:
+  enabled: true
+  default_strategy: round_robin
+  track_performance: true
+  persist_state: true
+  reset_on_campaign_start: false
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      randomize_start: false
+    random:
+      enabled: true
+      seed_based: true
+      avoid_recent_duplicates: true
+      duplicate_window: 10
+    weighted:
+      enabled: true
+      weight_field: weight
+      normalize_weights: true
+      dynamic_adjustment: false
+    time_based:
+      enabled: true
+      schedule:
+        morning:
+          start: "06:00"
+          end: "12:00"
+          names: []
+        afternoon:
+          start: "12:00"
+          end: "18:00"
+          names: []
+        evening:
+          start: "18:00"
+          end: "23:00"
+          names: []
+        night:
+          start: "23:00"
+          end: "06:00"
+          names: []
+      timezone: UTC
+      fallback_strategy: round_robin
+
+subject:
+  enabled: true
+  default_strategy: round_robin
+  track_performance: true
+  persist_state: true
+  reset_on_campaign_start: false
+  a_b_testing: false
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      randomize_start: false
+    random:
+      enabled: true
+      seed_based: true
+      avoid_recent_duplicates: true
+      duplicate_window: 10
+    weighted:
+      enabled: true
+      weight_field: weight
+      normalize_weights: true
+      dynamic_adjustment: true
+      adjustment_criteria:
+        metric: open_rate
+        min_sample_size: 100
+        adjustment_factor: 0.1
+    time_based:
+      enabled: true
+      schedule:
+        morning:
+          start: "06:00"
+          end: "12:00"
+          subjects: []
+        afternoon:
+          start: "12:00"
+          end: "18:00"
+          subjects: []
+        evening:
+          start: "18:00"
+          end: "23:00"
+          subjects: []
+        night:
+          start: "23:00"
+          end: "06:00"
+          subjects: []
+      timezone: UTC
+      fallback_strategy: round_robin
+    performance_based:
+      enabled: false
+      metric: open_rate
+      evaluation_period: 3600s
+      min_sample_size: 50
+      top_performers_percentage: 30
+
+template:
+  enabled: true
+  default_strategy: round_robin
+  unlimited_rotation: true
+  track_performance: true
+  persist_state: true
+  reset_on_campaign_start: false
+  naming_pattern: "{index}.html"
+  start_index: 1
+  max_index: 999999
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      randomize_start: false
+    random:
+      enabled: true
+      seed_based: true
+      avoid_recent_duplicates: true
+      duplicate_window: 5
+    weighted:
+      enabled: true
+      weight_field: weight
+      normalize_weights: true
+      dynamic_adjustment: false
+    sequential_unlimited:
+      enabled: true
+      start_index: 1
+      increment: 1
+      wrap_at: 0
+      fallback_on_missing: true
+      fallback_strategy: round_robin
+
+custom_field:
+  enabled: true
+  default_strategy: round_robin
+  max_fields: 20
+  track_performance: false
+  persist_state: true
+  reset_on_campaign_start: false
+  field_prefix: "CUSTOM_"
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      randomize_start: false
+      per_field_state: true
+    random:
+      enabled: true
+      seed_based: true
+      avoid_recent_duplicates: false
+      per_field_state: true
+    weighted:
+      enabled: true
+      weight_field: weight
+      normalize_weights: true
+      per_field_state: true
+    sequential:
+      enabled: true
+      wrap_around: true
+      per_field_state: true
+
+attachment:
+  enabled: false
+  rotation_type: format
+  default_strategy: round_robin
+  track_performance: false
+  persist_state: true
+  reset_on_campaign_start: false
+  format_rotation:
+    enabled: false
+    formats:
+      - pdf
+      - jpg
+      - png
+      - webp
+    strategy: round_robin
+    per_template: true
+  template_rotation:
+    enabled: false
+    strategy: round_robin
+    naming_pattern: "attachment_{index}"
+    start_index: 1
+
+account:
+  enabled: true
+  default_strategy: health_based
+  track_performance: true
+  persist_state: true
+  cooldown_enabled: true
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      skip_suspended: true
+      skip_over_limit: true
+    random:
+      enabled: true
+      seed_based: false
+      skip_suspended: true
+      skip_over_limit: true
+    weighted:
+      enabled: true
+      weight_criteria:
+        - health_score
+        - success_rate
+        - remaining_daily_limit
+      normalize_weights: true
+      skip_suspended: true
+      skip_over_limit: true
+    health_based:
+      enabled: true
+      min_health_score: 70
+      prefer_high_health: true
+      health_weight: 0.6
+      limit_weight: 0.3
+      success_rate_weight: 0.1
+      skip_suspended: true
+      skip_over_limit: true
+    least_used:
+      enabled: true
+      metric: emails_sent_today
+      skip_suspended: true
+      skip_over_limit: true
+
+proxy:
+  enabled: false
+  default_strategy: round_robin
+  track_performance: true
+  persist_state: true
+  strategies:
+    round_robin:
+      enabled: true
+      wrap_around: true
+      skip_unhealthy: true
+    random:
+      enabled: true
+      seed_based: false
+      skip_unhealthy: true
+    health_based:
+      enabled: true
+      min_health_score: 70
+      prefer_high_health: true
+      skip_unhealthy: true
+    least_used:
+      enabled: true
+      metric: connection_count
+      skip_unhealthy: true
+
+statistics:
+  enabled: true
+  track_by_rotation_type: true
+  track_by_strategy: true
+  track_by_value: true
+  aggregate_interval: 300s
+  retention_period: 2160h
+  metrics:
+    total_rotations: true
+    success_rate: true
+    error_rate: true
+    performance_score: true
+    usage_distribution: true
+
+performance:
+  cache_rotation_state: true
+  cache_ttl: 3600s
+  preload_on_start: true
+  concurrent_safe: true
+  lock_timeout: 5s
+  batch_state_updates: true
+  batch_size: 100
+  batch_interval: 30s
+
+fallback:
+  on_empty_pool: first_available
+  on_all_suspended: wait_and_retry
+  on_strategy_error: round_robin
+  on_state_corruption: reset_and_continue
+  max_fallback_attempts: 3
+
+validation:
+  validate_on_load: true
+  validate_strategy_exists: true
+  validate_values_exist: true
+  strict_mode: false
+  auto_fix_errors: true
+
+persistence:
+  save_interval: 60s
+  save_on_rotation: false
+  save_on_campaign_end: true
+  storage_backend: database
+  compression_enabled: false
+  encryption_enabled: false
+
+distribution:
+  even_distribution: true
+  distribution_tolerance: 0.1
+  rebalance_enabled: false
+  rebalance_interval: 3600s
+  rebalance_threshold: 0.2

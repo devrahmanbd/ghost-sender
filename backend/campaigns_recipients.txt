@@ -1,0 +1,54 @@
+                                       Table "public.recipients"
+       Column       |            Type             | Collation | Nullable |           Default           
+--------------------+-----------------------------+-----------+----------+-----------------------------
+ id                 | uuid                        |           | not null | uuid_generate_v4()
+ list_id            | uuid                        |           | not null | 
+ email              | character varying(255)      |           | not null | 
+ name               | character varying(255)      |           |          | 
+ first_name         | character varying(100)      |           |          | 
+ last_name          | character varying(100)      |           |          | 
+ status             | text                        |           | not null | 'pending'::recipient_status
+ custom_fields      | jsonb                       |           |          | '{}'::jsonb
+ sent_at            | timestamp without time zone |           |          | 
+ failed_at          | timestamp without time zone |           |          | 
+ bounced_at         | timestamp without time zone |           |          | 
+ account_id         | uuid                        |           |          | 
+ template_id        | uuid                        |           |          | 
+ retry_count        | integer                     |           |          | 0
+ max_retries        | integer                     |           |          | 3
+ error_message      | text                        |           |          | 
+ error_code         | character varying(50)       |           |          | 
+ message_id         | character varying(255)      |           |          | 
+ opened_at          | timestamp without time zone |           |          | 
+ clicked_at         | timestamp without time zone |           |          | 
+ unsubscribed_at    | timestamp without time zone |           |          | 
+ metadata           | jsonb                       |           |          | '{}'::jsonb
+ created_at         | timestamp without time zone |           | not null | now()
+ updated_at         | timestamp without time zone |           | not null | now()
+ sender_used        | character varying(255)      |           |          | 
+ subject_used       | text                        |           |          | 
+ custom_fields_used | jsonb                       |           |          | '{}'::jsonb
+ sent               | boolean                     |           | not null | false
+ failed             | boolean                     |           | not null | false
+Indexes:
+    "recipients_pkey" PRIMARY KEY, btree (id)
+    "idx_recipients_account_id" btree (account_id)
+    "idx_recipients_campaign_id_created_at" btree (list_id, created_at DESC)
+    "idx_recipients_campaign_id_status" btree (list_id, status)
+    "idx_recipients_email" btree (email)
+    "idx_recipients_list_id" btree (list_id)
+    "idx_recipients_listid" btree (list_id)
+    "idx_recipients_status" btree (status)
+    "idx_recipients_status_sent_at" btree (status, sent_at) WHERE sent_at IS NOT NULL
+    "recipients_campaign_id_email_key" UNIQUE CONSTRAINT, btree (list_id, email)
+Foreign-key constraints:
+    "recipients_account_id_fkey" FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    "recipients_campaign_id_fkey" FOREIGN KEY (list_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    "recipients_template_id_fkey" FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
+Referenced by:
+    TABLE "campaign_recipient_stats" CONSTRAINT "campaign_recipient_stats_recipient_id_fkey" FOREIGN KEY (recipient_id) REFERENCES recipients(id) ON DELETE SET NULL
+    TABLE "email_logs" CONSTRAINT "email_logs_recipient_id_fkey" FOREIGN KEY (recipient_id) REFERENCES recipients(id) ON DELETE SET NULL
+    TABLE "rotation_history" CONSTRAINT "rotation_history_recipient_id_fkey" FOREIGN KEY (recipient_id) REFERENCES recipients(id) ON DELETE SET NULL
+Triggers:
+    update_recipients_updated_at BEFORE UPDATE ON recipients FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+

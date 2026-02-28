@@ -1,0 +1,852 @@
+# =============================================================================
+# Email Campaign System - Configuration File (Example with Comments)
+# =============================================================================
+# This is an example configuration file with detailed comments for each option.
+# Copy this file to config.yaml and customize it for your environment.
+# Environment variables can override these settings using the format: APP_SECTION_KEY
+# Example: APP_DATABASE_HOST=localhost
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Application Settings
+# -----------------------------------------------------------------------------
+app:
+  # Application name displayed in logs and UI
+  name: email-campaign-system
+  
+  # Current version of the application
+  version: 1.0.0
+  
+  # Environment: development, staging, production
+  environment: production
+  
+  # Enable debug mode for verbose logging (DO NOT enable in production)
+  debug: false
+  
+  # Timezone for date/time operations (IANA timezone format)
+  timezone: UTC
+
+# -----------------------------------------------------------------------------
+# HTTP Server Configuration
+# -----------------------------------------------------------------------------
+server:
+  # Server bind address (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+  host: 0.0.0.0
+  
+  # HTTP port to listen on
+  port: 8080
+  
+  # Maximum duration for reading the entire request (including body)
+  read_timeout: 30s
+  
+  # Maximum duration before timing out writes of the response
+  write_timeout: 30s
+  
+  # Maximum time to wait for the next request when keep-alives are enabled
+  idle_timeout: 120s
+  
+  # Maximum number of bytes the server will read parsing the request header
+  max_header_bytes: 1048576
+  
+  # Graceful shutdown timeout - wait for ongoing requests to complete
+  shutdown_timeout: 30s
+
+# -----------------------------------------------------------------------------
+# API Configuration
+# -----------------------------------------------------------------------------
+api:
+  # API route prefix (e.g., /api/v1)
+  prefix: /api/v1
+  
+  # Enable Cross-Origin Resource Sharing (CORS)
+  cors_enabled: true
+  
+  # Allowed origins for CORS (* = all origins, use specific URLs in production)
+  cors_origins:
+    - http://localhost
+    - http://localhost:8080
+    - https://yourdomain.com
+  
+  # Allowed HTTP methods for CORS
+  cors_methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - PATCH
+    - OPTIONS
+  
+  # Allowed headers for CORS
+  cors_headers:
+    - Content-Type
+    - Authorization
+    - X-Requested-With
+    - X-API-Key
+  
+  # Allow credentials (cookies, authorization headers) in CORS requests
+  cors_credentials: true
+  
+  # Enable API rate limiting
+  rate_limit_enabled: true
+  
+  # Number of requests allowed per window
+  rate_limit_requests: 100
+  
+  # Time window for rate limiting
+  rate_limit_window: 60s
+
+# -----------------------------------------------------------------------------
+# WebSocket Configuration
+# -----------------------------------------------------------------------------
+websocket:
+  # Enable WebSocket support for real-time updates
+  enabled: true
+  
+  # WebSocket endpoint path
+  path: /ws
+  
+  # Buffer size for reading messages
+  read_buffer_size: 1024
+  
+  # Buffer size for writing messages
+  write_buffer_size: 1024
+  
+  # Maximum message size in KB
+  max_message_size: 512
+  
+  # Send ping to client at this interval
+  ping_period: 54s
+  
+  # Time allowed to read the next pong message from client
+  pong_wait: 60s
+  
+  # Time allowed to write a message to client
+  write_wait: 10s
+
+# -----------------------------------------------------------------------------
+# Database Configuration (PostgreSQL)
+# -----------------------------------------------------------------------------
+database:
+  # Database driver (currently only postgres is supported)
+  driver: postgres
+  
+  # Database host address
+  host: localhost
+  
+  # Database port
+  port: 5432
+  
+  # Database username
+  username: postgres
+  
+  # Database password (use environment variable: APP_DATABASE_PASSWORD)
+  password: your-secure-password-here
+  
+  # Database name
+  database: email_campaign
+  
+  # SSL mode: disable, require, verify-ca, verify-full
+  sslmode: disable
+  
+  # Maximum number of open connections to the database
+  max_open_conns: 25
+  
+  # Maximum number of idle connections
+  max_idle_conns: 5
+  
+  # Maximum lifetime of a connection
+  conn_max_lifetime: 300s
+  
+  # Maximum idle time of a connection
+  conn_max_idle_time: 60s
+  
+  # Log all SQL queries (debug only)
+  log_queries: false
+  
+  # Automatically run migrations on startup
+  auto_migrate: true
+
+# -----------------------------------------------------------------------------
+# Cache Configuration (Redis)
+# -----------------------------------------------------------------------------
+cache:
+  # Cache driver: redis, memory
+  driver: redis
+  
+  # Redis host address
+  host: localhost
+  
+  # Redis port
+  port: 6379
+  
+  # Redis password (leave empty if no password)
+  password: ""
+  
+  # Redis database number (0-15)
+  database: 0
+  
+  # Maximum number of socket connections
+  pool_size: 10
+  
+  # Minimum number of idle connections
+  min_idle_conns: 5
+  
+  # Dial timeout for establishing new connections
+  dial_timeout: 5s
+  
+  # Timeout for socket reads
+  read_timeout: 3s
+  
+  # Timeout for socket writes
+  write_timeout: 3s
+  
+  # Connection pool timeout
+  pool_timeout: 4s
+  
+  # Idle timeout for connections
+  idle_timeout: 300s
+  
+  # Fallback to in-memory cache if Redis is unavailable
+  fallback_to_memory: true
+  
+  # Default TTL (time-to-live) for cache entries
+  default_ttl: 3600s
+
+# -----------------------------------------------------------------------------
+# File Storage Configuration
+# -----------------------------------------------------------------------------
+storage:
+  # Storage driver: local, s3 (only local is currently supported)
+  driver: local
+  
+  # Base path for all storage
+  base_path: ./storage
+  
+  # Path for email templates
+  templates_path: ./storage/templates
+  
+  # Path for file uploads
+  uploads_path: ./storage/uploads
+  
+  # Path for application logs
+  logs_path: ./storage/logs
+  
+  # Path for cache files
+  cache_path: ./storage/cache
+  
+  # Maximum upload file size in bytes (50MB default)
+  max_upload_size: 52428800
+  
+  # Allowed file extensions for uploads
+  allowed_extensions:
+    - html
+    - htm
+    - txt
+    - csv
+    - zip
+    - pdf
+    - jpg
+    - jpeg
+    - png
+    - webp
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging:
+  # Log level: debug, info, warn, error, fatal
+  level: info
+  
+  # Log format: json, text
+  format: json
+  
+  # Log output: stdout, stderr, file
+  output: stdout
+  
+  # Enable logging to file
+  file_enabled: true
+  
+  # Log file path
+  file_path: ./storage/logs/app.log
+  
+  # Maximum size in megabytes before log rotation
+  max_size: 100
+  
+  # Maximum number of old log files to retain
+  max_backups: 10
+  
+  # Maximum number of days to retain old log files
+  max_age: 30
+  
+  # Compress rotated log files
+  compress: true
+  
+  # Log all HTTP requests
+  log_requests: true
+  
+  # Log SQL queries (debug only)
+  log_sql: false
+
+# -----------------------------------------------------------------------------
+# Security Configuration
+# -----------------------------------------------------------------------------
+security:
+  # JWT secret key for token signing (CHANGE THIS IN PRODUCTION!)
+  # Use a strong random string (32+ characters)
+  jwt_secret: change-this-secret-key-in-production-use-random-string
+  
+  # JWT token expiration in seconds (24 hours)
+  jwt_expiration: 86400
+  
+  # JWT refresh token expiration in seconds (7 days)
+  jwt_refresh_expiration: 604800
+  
+  # Enable API key authentication
+  api_key_enabled: true
+  
+  # HTTP header name for API key
+  api_key_header: X-API-Key
+  
+  # Encryption key for sensitive data (CHANGE THIS - must be 32 bytes)
+  encryption_key: change-this-32-byte-encryption-key!!
+  
+  # HMAC secret for generating signatures (CHANGE THIS IN PRODUCTION!)
+  hmac_secret: change-this-hmac-secret-key-in-production
+  
+  # Bcrypt cost factor for password hashing (10-14 recommended)
+  bcrypt_cost: 12
+
+# -----------------------------------------------------------------------------
+# Campaign Management Configuration
+# -----------------------------------------------------------------------------
+campaign:
+  # Maximum number of concurrent campaigns
+  max_concurrent: 10
+  
+  # Default batch size for processing recipients
+  default_batch_size: 100
+  
+  # Maximum batch size allowed
+  max_batch_size: 1000
+  
+  # Save campaign state after processing this many emails
+  checkpoint_interval: 100
+  
+  # Enable automatic cleanup of old campaigns
+  auto_cleanup_enabled: true
+  
+  # Delete completed campaigns after this duration (168h = 7 days)
+  cleanup_completed_after: 168h
+  
+  # Delete failed campaigns after this duration (72h = 3 days)
+  cleanup_failed_after: 72h
+  
+  # Maximum retry attempts for failed campaign operations
+  max_retry_attempts: 3
+  
+  # Base delay for exponential backoff retries
+  retry_base_delay: 5s
+  
+  # Maximum delay between retries
+  retry_max_delay: 300s
+  
+  # Interval for sending progress updates via WebSocket
+  progress_update_interval: 10s
+  
+  # Enable campaign state persistence to database
+  state_persistence_enabled: true
+  
+  # Timeout for graceful shutdown of running campaigns
+  graceful_shutdown_timeout: 60s
+
+# -----------------------------------------------------------------------------
+# Account Management Configuration
+# -----------------------------------------------------------------------------
+account:
+  # Rotation strategy: round_robin, random, weighted, health_based
+  rotation_strategy: health_based
+  
+  # Interval for checking account health
+  health_check_interval: 300s
+  
+  # Minimum health score to use account (0-100)
+  health_score_threshold: 70
+  
+  # Enable automatic account suspension on errors
+  suspension_enabled: true
+  
+  # Number of consecutive errors before suspension
+  suspension_error_threshold: 5
+  
+  # Duration of account suspension
+  suspension_duration: 3600s
+  
+  # Enable daily sending limits per account
+  daily_limit_enabled: true
+  
+  # Default daily limit for new accounts
+  default_daily_limit: 500
+  
+  # Enable rotation limits (emails per account before rotation)
+  rotation_limit_enabled: true
+  
+  # Default rotation limit for new accounts
+  default_rotation_limit: 100
+  
+  # Enable cooldown period after account rotation
+  cooldown_enabled: true
+  
+  # Cooldown duration before reusing an account
+  cooldown_duration: 300s
+  
+  # Connection pool size per account
+  connection_pool_size: 5
+  
+  # Connection timeout for establishing connections
+  connection_timeout: 30s
+
+# -----------------------------------------------------------------------------
+# Email Sender Configuration
+# -----------------------------------------------------------------------------
+sender:
+  # Number of parallel worker goroutines for sending
+  worker_pool_size: 4
+  
+  # Email queue size (buffer)
+  queue_size: 1000
+  
+  # Batch size for processing emails
+  batch_size: 100
+  
+  # Timeout for sending a single email
+  send_timeout: 60s
+  
+  # Enable retry mechanism for failed sends
+  retry_enabled: true
+  
+  # Maximum retry attempts per email
+  retry_max_attempts: 3
+  
+  # Base delay for exponential backoff
+  retry_base_delay: 5s
+  
+  # Maximum delay between retries
+  retry_max_delay: 60s
+  
+  # Enable rate limiting
+  rate_limit_enabled: true
+  
+  # Maximum emails per second
+  rate_limit_per_second: 5
+  
+  # Delay between sends (throttling)
+  throttle_delay: 200ms
+  
+  # Enable adaptive rate adjustment based on errors
+  adaptive_rate_enabled: true
+  
+  # Enable provider health checking
+  health_check_enabled: true
+
+# -----------------------------------------------------------------------------
+# Template Configuration
+# -----------------------------------------------------------------------------
+template:
+  # Enable template rotation
+  rotation_enabled: true
+  
+  # Rotation strategy: round_robin, random, weighted
+  rotation_strategy: round_robin
+  
+  # Enable template caching
+  cache_enabled: true
+  
+  # Cache TTL for rendered templates
+  cache_ttl: 3600s
+  
+  # Enable spam content checking
+  spam_check_enabled: true
+  
+  # Maximum allowed spam score (0-10)
+  spam_score_threshold: 5.0
+  
+  # Enable template validation
+  validation_enabled: true
+  
+  # Maximum template file size in bytes (5MB)
+  max_template_size: 5242880
+  
+  # Maximum number of personalization variables
+  allowed_variables: 50
+  
+  # Timeout for rendering a template
+  render_timeout: 10s
+
+# -----------------------------------------------------------------------------
+# Personalization Engine Configuration
+# -----------------------------------------------------------------------------
+personalization:
+  # Enable personalization features
+  enabled: true
+  
+  # Enable smart name extraction from email addresses
+  smart_name_extraction: true
+  
+  # Default date format (Go time format)
+  date_format: "2006-01-02"
+  
+  # Default datetime format
+  datetime_format: "2006-01-02 15:04:05"
+  
+  # Timezone for date/time personalization
+  timezone: UTC
+  
+  # Use random seed for reproducible random values
+  random_seed_enabled: true
+  
+  # Enable custom user-defined variables
+  custom_variables_enabled: true
+  
+  # Maximum number of custom variables
+  max_custom_variables: 20
+
+# -----------------------------------------------------------------------------
+# Rotation System Configuration
+# -----------------------------------------------------------------------------
+rotation:
+  # Sender name rotation
+  sender_name:
+    enabled: true
+    strategy: round_robin  # round_robin, random, weighted, time_based
+    track_stats: true
+  
+  # Subject line rotation
+  subject:
+    enabled: true
+    strategy: round_robin
+    track_stats: true
+  
+  # Template rotation
+  template:
+    enabled: true
+    strategy: round_robin
+    unlimited: true  # Unlimited rotation (1.html -> infinity)
+  
+  # Custom field rotation
+  custom_field:
+    enabled: true
+    strategy: round_robin
+    max_fields: 10
+  
+  # Attachment rotation
+  attachment:
+    enabled: false
+    format_rotation: false
+
+# -----------------------------------------------------------------------------
+# Attachment Configuration
+# -----------------------------------------------------------------------------
+attachment:
+  # Enable attachment support
+  enabled: true
+  
+  # Maximum attachment size in bytes (25MB)
+  max_size: 26214400
+  
+  # Supported attachment formats
+  formats:
+    - pdf
+    - jpg
+    - png
+    - webp
+  
+  # Enable attachment caching
+  cache_enabled: true
+  
+  # Cache TTL for generated attachments
+  cache_ttl: 7200s
+  
+  # Timeout for attachment conversion
+  conversion_timeout: 30s
+  
+  # PDF conversion backend: chromedp, wkhtmltopdf
+  pdf_backend: chromedp
+  
+  # Image quality for JPG/PNG (0-100)
+  image_quality: 85
+  
+  # WebP quality (0-100)
+  webp_quality: 80
+  
+  # Enable compression for attachments
+  compression_enabled: true
+
+# -----------------------------------------------------------------------------
+# Proxy Configuration
+# -----------------------------------------------------------------------------
+proxy:
+  # Enable proxy support
+  enabled: false
+  
+  # Rotation strategy: round_robin, random, least_used
+  rotation_strategy: round_robin
+  
+  # Enable proxy health checking
+  health_check_enabled: true
+  
+  # Interval for checking proxy health
+  health_check_interval: 600s
+  
+  # Timeout for health check requests
+  health_check_timeout: 10s
+  
+  # Proxy connection timeout
+  timeout: 30s
+  
+  # Maximum retries for failed proxy connections
+  max_retries: 3
+  
+  # Supported proxy types
+  supported_types:
+    - http
+    - https
+    - socks5
+
+# -----------------------------------------------------------------------------
+# Notification Configuration (Telegram)
+# -----------------------------------------------------------------------------
+notification:
+  # Enable notification system
+  enabled: true
+  
+  # Telegram configuration
+  telegram:
+    # Enable Telegram notifications
+    enabled: false
+    
+    # Telegram bot token (get from @BotFather)
+    bot_token: "YOUR_BOT_TOKEN_HERE"
+    
+    # Chat IDs to send notifications to (can be multiple)
+    chat_ids:
+      - 123456789
+      - 987654321
+    
+    # Parse mode: Markdown, HTML, MarkdownV2
+    parse_mode: Markdown
+    
+    # Disable notification sound
+    disable_notification: false
+    
+    # Enable retry on failure
+    retry_enabled: true
+    
+    # Maximum retry attempts
+    max_retries: 3
+    
+    # Delay between retries
+    retry_delay: 5s
+  
+  # Events to trigger notifications
+  events:
+    campaign_started: true
+    campaign_completed: true
+    campaign_failed: true
+    campaign_paused: false
+    account_suspended: true
+    daily_limit_reached: true
+    error_threshold_reached: true
+    system_error: true
+
+# -----------------------------------------------------------------------------
+# Email Deliverability Configuration
+# -----------------------------------------------------------------------------
+deliverability:
+  # Enable Feedback-ID header for Gmail FBL
+  feedback_id_enabled: true
+  
+  # Domain for Feedback-ID header
+  feedback_id_domain: example.com
+  
+  # Enable List-Unsubscribe headers
+  list_unsubscribe_enabled: true
+  
+  # Unsubscribe URL (must be HTTPS)
+  unsubscribe_url: https://example.com/unsubscribe
+  
+  # Enable Message-ID generation
+  message_id_enabled: true
+  
+  # Domain for Message-ID generation
+  message_id_domain: example.com
+  
+  # Enable DKIM signing (requires DKIM keys)
+  dkim_enabled: false
+  
+  # Enable SPF checking
+  spf_enabled: false
+  
+  # Track sender reputation scores
+  reputation_tracking: true
+  
+  # Enable bounce handling
+  bounce_handling: true
+
+# -----------------------------------------------------------------------------
+# Rate Limiter Configuration
+# -----------------------------------------------------------------------------
+rate_limiter:
+  # Rate limiter algorithm: token_bucket, sliding_window
+  type: token_bucket
+  
+  # Use distributed rate limiting (requires Redis)
+  distributed: false
+  
+  # Redis key prefix for distributed limiter
+  redis_key_prefix: ratelimit
+  
+  # Enable per-account rate limiting
+  per_account_enabled: true
+  
+  # Enable global rate limiting
+  global_enabled: true
+  
+  # Global rate limit (requests per window)
+  global_limit: 100
+  
+  # Global rate limit window
+  global_window: 60s
+  
+  # Enable adaptive rate limiting
+  adaptive_enabled: false
+
+# -----------------------------------------------------------------------------
+# Recipient Management Configuration
+# -----------------------------------------------------------------------------
+recipient:
+  # Enable email validation
+  validation_enabled: true
+  
+  # Enable DNS MX record checking
+  dns_check_enabled: true
+  
+  # Enable automatic deduplication
+  deduplication_enabled: true
+  
+  # Batch size for bulk imports
+  bulk_import_batch_size: 1000
+  
+  # Maximum recipients per campaign
+  max_recipients_per_campaign: 100000
+  
+  # CSV delimiter character
+  csv_delimiter: ","
+  
+  # Skip first row in CSV (header row)
+  csv_skip_header: true
+
+# -----------------------------------------------------------------------------
+# Metrics Configuration
+# -----------------------------------------------------------------------------
+metrics:
+  # Enable metrics collection
+  enabled: true
+  
+  # Interval for collecting metrics
+  collection_interval: 60s
+  
+  # Days to retain metrics data
+  retention_days: 90
+  
+  # Enable metrics aggregation
+  aggregation_enabled: true
+  
+  # Enable metrics export (Prometheus, etc.)
+  export_enabled: false
+
+# -----------------------------------------------------------------------------
+# Monitoring & Health Checks
+# -----------------------------------------------------------------------------
+monitoring:
+  # Health check endpoint path
+  health_check_path: /health
+  
+  # Readiness check endpoint path
+  readiness_check_path: /ready
+  
+  # Metrics endpoint path (Prometheus format)
+  metrics_path: /metrics
+  
+  # Enable pprof profiling endpoints (debug only)
+  pprof_enabled: false
+
+# -----------------------------------------------------------------------------
+# Worker Configuration
+# -----------------------------------------------------------------------------
+worker:
+  # Number of background workers
+  pool_size: 4
+  
+  # Worker job queue size
+  queue_size: 1000
+  
+  # Worker job timeout
+  timeout: 300s
+  
+  # Enable retry for failed jobs
+  retry_enabled: true
+  
+  # Maximum retries for failed jobs
+  max_retries: 3
+  
+  # Backoff multiplier for retries
+  backoff_multiplier: 2
+
+# -----------------------------------------------------------------------------
+# Cleanup Configuration
+# -----------------------------------------------------------------------------
+cleanup:
+  # Enable automatic cleanup
+  enabled: true
+  
+  # Cleanup interval
+  interval: 3600s
+  
+  # Retention periods for various data types
+  retention:
+    # Log file retention (720h = 30 days)
+    logs: 720h
+    
+    # Completed campaigns retention (168h = 7 days)
+    campaigns_completed: 168h
+    
+    # Failed campaigns retention (72h = 3 days)
+    campaigns_failed: 72h
+    
+    # Session data retention (168h = 7 days)
+    sessions: 168h
+    
+    # Cache data retention (24h = 1 day)
+    cache: 24h
+    
+    # Temporary files retention (1h)
+    temp_files: 1h
+
+# -----------------------------------------------------------------------------
+# Performance Configuration
+# -----------------------------------------------------------------------------
+performance:
+  # Memory limit in bytes (2GB)
+  memory_limit: 2147483648
+  
+  # Enable garbage collection tuning
+  gc_enabled: true
+  
+  # GC percentage (default 100)
+  gc_percent: 100
+  
+  # Maximum number of goroutines
+  max_goroutines: 10000
+  
+  # Enable connection pooling
+  connection_pool_enabled: true
