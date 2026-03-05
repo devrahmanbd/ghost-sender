@@ -496,70 +496,43 @@ func (m *Manager) DeleteCampaign(ctx context.Context, campaignID string) error {
 
 	return nil
 }
-
 func (m *Manager) monitorCampaign(ctx context.Context, instance *CampaignInstance) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-m.shutdownSignal:
-			return
-		case <-ticker.C:
-			instance.mu.RLock()
-			status := instance.State.Status
-			instance.mu.RUnlock()
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-m.shutdownSignal:
+            return
+        case <-ticker.C:
+            instance.mu.RLock()
+            status := instance.State.Status
+            executor := instance.Executor // ✅ capture under lock
+            instance.mu.RUnlock()
 
-			if status != models.CampaignStatusRunning {
-				return
-			}
+            if status != models.CampaignStatusRunning {
+                return
+            }
 
-			m.updateCampaignStats(instance)
+            // ✅ Guard before calling any method on executor
+            if executor == nil {
+                m.log.Warn("monitorCampaign: executor nil, stopping monitor",
+                    logger.String("campaign_id", instance.Campaign.ID))
+                return
+            }
 
-			if instance.Executor.IsComplete() {
-				m.completeCampaign(ctx, instance)
-				return
-			}
-		}
-	}
+            m.updateCampaignStats(instance)
+
+            if executor.IsComplete() {
+                m.completeCampaign(ctx, instance)
+                return
+            }
+        }
+    }
 }
 
-func (m *Manager) updateCampaignStats(instance *CampaignInstance) {
-	stats := instance.Executor.GetStats()
-
-	instance.Stats.mu.Lock()
-	instance.Stats.TotalRecipients = stats.Total
-	instance.Stats.Sent = stats.Sent
-	instance.Stats.Failed = stats.Failed
-	instance.Stats.Pending = stats.Pending
-	instance.Stats.Skipped = stats.Skipped
-
-	if stats.Total > 0 {
-		instance.Stats.SuccessRate = float64(stats.Sent) / float64(stats.Total) * 100
-	}
-
-	elapsed := time.Since(instance.StartTime).Seconds()
-	if elapsed > 0 {
-		instance.Stats.Throughput = float64(stats.Sent) / elapsed
-	}
-
-	if stats.Sent > 0 {
-		instance.Stats.AverageSendTime = time.Duration(elapsed/float64(stats.Sent)) * time.Second
-	}
-
-	remaining := stats.Total - stats.Sent - stats.Failed - stats.Skipped
-	if instance.Stats.Throughput > 0 && remaining > 0 {
-		eta := time.Duration(float64(remaining)/instance.Stats.Throughput) * time.Second
-		instance.Stats.EstimatedComplete = time.Now().Add(eta)
-	}
-	instance.Stats.mu.Unlock()
-
-	m.broadcastCampaignEvent(instance.Campaign.ID, "stats_update", map[string]interface{}{
-		"stats": instance.Stats,
-	})
-}
 
 func (m *Manager) completeCampaign(ctx context.Context, instance *CampaignInstance) {
 	instance.mu.Lock()
@@ -673,27 +646,77 @@ func (m *Manager) cleanupLoop(interval time.Duration) {
 }
 
 func (m *Manager) statsUpdateLoop(interval time.Duration) {
-	defer m.wg.Done()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+    defer m.wg.Done()
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
 
-	for {
-		select {
-		case <-m.shutdownSignal:
-			return
-		case <-ticker.C:
-			m.mu.RLock()
-			for _, instance := range m.campaigns {
-				instance.mu.RLock()
-				if instance.State.Status == models.CampaignStatusRunning {
-					go m.updateCampaignStats(instance)
-				}
-				instance.mu.RUnlock()
-			}
-			m.mu.RUnlock()
-		}
-	}
+    for {
+        select {
+        case <-m.shutdownSignal:
+            return
+        case <-ticker.C:
+            m.mu.RLock()
+            for _, instance := range m.campaigns {
+                instance.mu.RLock()
+                isRunning := instance.State.Status == models.CampaignStatusRunning
+                hasExecutor := instance.Executor != nil // ✅ guard
+                instance.mu.RUnlock()
+
+                if isRunning && hasExecutor {
+                    go m.updateCampaignStats(instance)
+                }
+            }
+            m.mu.RUnlock()
+        }
+    }
 }
+
+func (m *Manager) updateCampaignStats(instance *CampaignInstance) {
+    // ✅ Double-check inside the goroutine — Executor could be nil if Start failed
+    instance.mu.RLock()
+    executor := instance.Executor
+    instance.mu.RUnlock()
+
+    if executor == nil {
+        m.log.Warn("updateCampaignStats: executor is nil, skipping",
+            logger.String("campaign_id", instance.Campaign.ID))
+        return
+    }
+
+    stats := executor.GetStats()
+
+    instance.Stats.mu.Lock()
+    instance.Stats.TotalRecipients = stats.Total
+    instance.Stats.Sent = stats.Sent
+    instance.Stats.Failed = stats.Failed
+    instance.Stats.Pending = stats.Pending
+    instance.Stats.Skipped = stats.Skipped
+
+    if stats.Total > 0 {
+        instance.Stats.SuccessRate = float64(stats.Sent) / float64(stats.Total) * 100
+    }
+
+    elapsed := time.Since(instance.StartTime).Seconds()
+    if elapsed > 0 {
+        instance.Stats.Throughput = float64(stats.Sent) / elapsed
+    }
+
+    if stats.Sent > 0 {
+        instance.Stats.AverageSendTime = time.Duration(elapsed/float64(stats.Sent)) * time.Second
+    }
+
+    remaining := stats.Total - stats.Sent - stats.Failed - stats.Skipped
+    if instance.Stats.Throughput > 0 && remaining > 0 {
+        eta := time.Duration(float64(remaining)/instance.Stats.Throughput) * time.Second
+        instance.Stats.EstimatedComplete = time.Now().Add(eta)
+    }
+    instance.Stats.mu.Unlock()
+
+    m.broadcastCampaignEvent(instance.Campaign.ID, "stats_update", map[string]interface{}{
+        "stats": instance.Stats,
+    })
+}
+
 
 func (m *Manager) validateCampaign(campaign *models.Campaign) error {
 	if campaign.Name == "" {
@@ -861,36 +884,52 @@ func (m *Manager) toRepositoryCampaign(campaign *models.Campaign) *repository.Ca
 }
 func (m *Manager) loadFromDB(ctx context.Context) error {
     fmt.Printf("DEBUG loadFromDB: START — calling repo.List\n")
-	rows, _, err := m.repo.List(ctx, &repository.CampaignFilter{IncludeArchived: false})
-    
+    rows, _, err := m.repo.List(ctx, &repository.CampaignFilter{IncludeArchived: false})
     if err != nil {
-        fmt.Printf("DEBUG loadFromDB: repo.List FAILED: %v\n", err)   // ← ADD
+        fmt.Printf("DEBUG loadFromDB: repo.List FAILED: %v\n", err)
         return fmt.Errorf("loadFromDB: %w", err)
     }
     fmt.Printf("DEBUG loadFromDB: repo.List returned %d rows\n", len(rows))
-	for _, rc := range rows {
-		c := m.fromRepositoryCampaign(rc)
-		state := NewCampaignState(c.ID)
-		state.Status = c.Status
 
-		stats := &CampaignStats{
-			TotalRecipients: int64(rc.TotalRecipients),
-			Sent:            int64(rc.SentCount),
-			Failed:          int64(rc.FailedCount),
-			Pending:         int64(rc.PendingCount),
-			SuccessRate:     rc.SuccessRate,
-			Throughput:      rc.Throughput,
-		}
+    for _, rc := range rows {
+        c := m.fromRepositoryCampaign(rc)
+        state := NewCampaignState(c.ID)
+        state.Status = c.Status
 
-		m.campaigns[c.ID] = &CampaignInstance{
-			Campaign: c,
-			State:    state,
-			Stats:    stats,
-		}
-	}
-	fmt.Printf("DEBUG loadFromDB: loaded %d campaigns into memory\n", len(m.campaigns))
-	return nil
+        // ✅ Campaigns marked "running" in DB means the server crashed mid-run.
+        // Reset to "failed" so statsUpdateLoop never calls GetStats on a nil Executor.
+        if c.Status == models.CampaignStatusRunning {
+            c.Status = models.CampaignStatusFailed
+            state.Status = models.CampaignStatusFailed
+            fmt.Printf("DEBUG loadFromDB: reset stale running→failed for id=%s\n", c.ID)
+
+            // Persist the reset so DB is consistent
+            if err := m.repo.Update(ctx, m.toRepositoryCampaign(c)); err != nil {
+                fmt.Printf("DEBUG loadFromDB: failed to persist reset for id=%s: %v\n", c.ID, err)
+            }
+        }
+
+        stats := &CampaignStats{
+            TotalRecipients: int64(rc.TotalRecipients),
+            Sent:            int64(rc.SentCount),
+            Failed:          int64(rc.FailedCount),
+            Pending:         int64(rc.PendingCount),
+            SuccessRate:     rc.SuccessRate,
+            Throughput:      rc.Throughput,
+        }
+
+        m.campaigns[c.ID] = &CampaignInstance{
+            Campaign: c,
+            State:    state,
+            Stats:    stats,
+            // Executor intentionally nil — only set when campaign is actually started
+        }
+    }
+
+    fmt.Printf("DEBUG loadFromDB: loaded %d campaigns into memory\n", len(m.campaigns))
+    return nil
 }
+
 
 // fromRepositoryCampaign converts a flat repository.Campaign row to *models.Campaign.
 func (m *Manager) fromRepositoryCampaign(rc *repository.Campaign) *models.Campaign {

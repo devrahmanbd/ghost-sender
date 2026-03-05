@@ -148,61 +148,6 @@ func NewExecutor(
     }
 }
 
-func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (*ExecutorInstance, error) {
-	if !e.senderEngine.IsRunning() {
-		if err := e.senderEngine.Start(ctx); err != nil {
-			return nil, fmt.Errorf("failed to start sender engine: %w", err)
-		}
-	}
-
-    recipients, err := e.loadRecipients(ctx, campaign)
-    if err != nil {
-        return nil, fmt.Errorf("failed to load recipients: %w", err)
-    }
-
-    if len(recipients) == 0 {
-        return nil, ErrNoRecipients
-    }
-
-    accounts, err := e.loadAccounts(ctx, campaign)
-    if err != nil {
-        return nil, fmt.Errorf("failed to load accounts: %w", err)
-    }
-
-    if len(accounts) == 0 {
-        return nil, ErrNoAccounts
-    }
-
-    templates, err := e.loadTemplates(ctx, campaign)
-    if err != nil {
-        return nil, fmt.Errorf("failed to load templates: %w", err)
-    }
-
-    instance := &ExecutorInstance{
-        campaign:       campaign,
-        state:          NewExecutionState(),
-        recipients:     recipients,
-        templates:      templates,
-        accounts:       accounts,
-        stats:          NewExecutionStats(int64(len(recipients))),
-        senderInstance: e.senderEngine,
-        pauseChan:      make(chan struct{}),
-        resumeChan:     make(chan struct{}),
-        stopChan:       make(chan struct{}),
-    }
-
-    go instance.run(ctx, e)
-
-    e.log.Info("executor started",
-        logger.String("campaign_id", campaign.ID),
-        logger.Int("recipients", len(recipients)),
-        logger.Int("accounts", len(accounts)),
-        logger.Int("templates", len(templates)),
-    )
-
-    return instance, nil
-}
-
 func (ei *ExecutorInstance) run(ctx context.Context, executor *Executor) {
     defer func() {
         if r := recover(); r != nil {
@@ -584,9 +529,43 @@ func (e *Executor) loadRecipients(ctx context.Context, campaign *models.Campaign
 }
 
 func (e *Executor) loadAccounts(ctx context.Context, campaign *models.Campaign) ([]*models.Account, error) {
-    accounts, _, err := e.accountManager.List(ctx, nil)
-    return accounts, err
+    fmt.Printf("🟢 DEBUG loadAccounts: campaignID=%s accountIDs=%v\n", campaign.ID, campaign.AccountIDs)
+
+    opts := &account.ListOptions{  // ✅ pointer, not value
+        Page:      1,
+        PageSize:  100,
+        SortBy:    "created_at",
+        SortOrder: "desc",
+    }
+
+    accounts, _, err := e.accountManager.List(ctx, opts)
+    if err != nil {
+        fmt.Printf("🔴 DEBUG loadAccounts: List FAILED: %v\n", err)
+        return nil, fmt.Errorf("failed to load accounts: %w", err)
+    }
+
+    fmt.Printf("🟢 DEBUG loadAccounts: found=%d\n", len(accounts))
+
+    if len(campaign.AccountIDs) > 0 {
+        accountIDSet := make(map[string]struct{}, len(campaign.AccountIDs))
+        for _, id := range campaign.AccountIDs {
+            accountIDSet[id] = struct{}{}
+        }
+
+        filtered := make([]*models.Account, 0, len(campaign.AccountIDs))
+        for _, acc := range accounts {
+            if _, ok := accountIDSet[acc.ID]; ok {
+                filtered = append(filtered, acc)
+            }
+        }
+        fmt.Printf("🟢 DEBUG loadAccounts: filtered to campaign accounts=%d\n", len(filtered))
+        return filtered, nil
+    }
+
+    return accounts, nil
 }
+
+
 
 func (e *Executor) loadTemplates(ctx context.Context, campaign *models.Campaign) ([]*models.Template, error) {
     fmt.Printf("🟢 DEBUG loadTemplates: templateIDs=%v\n", campaign.TemplateIDs)
@@ -681,4 +660,69 @@ func (es *ExecutionStats) UpdateAverageSendTime(duration time.Duration) {
     if time.Since(es.StartTime).Seconds() > 0 {
         es.CurrentThroughput = float64(es.Sent) / time.Since(es.StartTime).Seconds()
     }
+}
+func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instance *ExecutorInstance, err error) {
+    // ✅ Catch any panic and convert to error so StartCampaign handler sees it
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("executor.Start panic: %v", r)
+            e.log.Error("executor.Start panic recovered",
+                logger.Any("panic", r),
+                logger.String("campaign_id", campaign.ID),
+            )
+        }
+    }()
+
+    e.senderEngine.SetCampaign(campaign)
+
+    if !e.senderEngine.IsRunning() {
+        if err := e.senderEngine.Start(ctx); err != nil {
+            return nil, fmt.Errorf("failed to start sender engine: %w", err)
+        }
+    }
+
+    recipients, err := e.loadRecipients(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load recipients: %w", err)
+    }
+    if len(recipients) == 0 {
+        return nil, ErrNoRecipients
+    }
+
+    accounts, err := e.loadAccounts(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load accounts: %w", err)
+    }
+    if len(accounts) == 0 {
+        return nil, ErrNoAccounts
+    }
+
+    templates, err := e.loadTemplates(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load templates: %w", err)
+    }
+
+    instance = &ExecutorInstance{
+        campaign:       campaign,
+        state:          NewExecutionState(),
+        recipients:     recipients,
+        templates:      templates,
+        accounts:       accounts,
+        stats:          NewExecutionStats(int64(len(recipients))),
+        senderInstance: e.senderEngine,
+        pauseChan:      make(chan struct{}),
+        resumeChan:     make(chan struct{}),
+        stopChan:       make(chan struct{}),
+    }
+
+    go instance.run(ctx, e)
+
+    e.log.Info("executor started",
+        logger.String("campaign_id", campaign.ID),
+        logger.Int("recipients", len(recipients)),
+        logger.Int("accounts", len(accounts)),
+        logger.Int("templates", len(templates)),
+    )
+
+    return instance, nil
 }

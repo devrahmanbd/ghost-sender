@@ -274,60 +274,72 @@ func (e *Engine) SetCampaign(campaign *models.Campaign) {
 	defer e.mu.Unlock()
 	e.campaign = campaign
 }
-
 func (e *Engine) Start(ctx context.Context) error {
-	if e.running.Load() {
-		return ErrEngineRunning
-	}
+    if e.running.Load() {
+        return ErrEngineRunning
+    }
 
-	e.mu.Lock()
-	if e.campaign == nil {
-		e.mu.Unlock()
-		return ErrNoCampaign
-	}
-	e.mu.Unlock()
+    e.mu.Lock()
+    if e.campaign == nil {
+        e.mu.Unlock()
+        return ErrNoCampaign
+    }
+    // ✅ Recreate one-shot channels so engine can restart after Stop
+    e.stopChan = make(chan struct{})
+    e.pauseChan = make(chan struct{})
+    e.resumeChan = make(chan struct{})
+    e.mu.Unlock()
 
-	e.running.Store(true)
-	e.paused.Store(false)
-	e.startTime = time.Now()
+    e.running.Store(true)
+    e.paused.Store(false)
+    e.startTime = time.Now()
 
-	e.stats.mu.Lock()
-	e.stats.StartTime = time.Now()
-	e.stats.mu.Unlock()
+    e.stats.mu.Lock()
+    e.stats.StartTime = time.Now()
+    e.stats.mu.Unlock()
 
-	if err := e.workerPool.Start(ctx, e.handleJob); err != nil {
-		return fmt.Errorf("failed to start worker pool: %w", err)
-	}
+    if err := e.workerPool.Start(ctx, e.handleJob); err != nil {
+        return fmt.Errorf("failed to start worker pool: %w", err)
+    }
 
-	go e.statsUpdateLoop(ctx)
-	go e.progressUpdateLoop(ctx)
-	go e.monitorLoop(ctx)
+    go e.statsUpdateLoop(ctx)
+    go e.progressUpdateLoop(ctx)
+    go e.monitorLoop(ctx)
 
-	e.log.Info(fmt.Sprintf("engine started: campaign_id=%s, workers=%d",
-		e.campaign.ID, e.config.WorkerCount))
+    e.log.Info(fmt.Sprintf("engine started: campaign_id=%s, workers=%d",
+        e.campaign.ID, e.config.WorkerCount))
 
-	return nil
+    return nil
 }
+
 
 func (e *Engine) Stop(ctx context.Context) error {
-	if !e.running.Load() {
-		return ErrEngineNotRunning
-	}
+    if !e.running.Load() {
+        return ErrEngineNotRunning
+    }
 
-	e.running.Store(false)
-	close(e.stopChan)
+    e.running.Store(false)
 
-	e.queue.Close()
+    // ✅ Close to signal goroutines, but do NOT reuse — Start() recreates it
+    select {
+    case <-e.stopChan:
+        // already closed
+    default:
+        close(e.stopChan)
+    }
 
-	if err := e.workerPool.Stop(ctx); err != nil {
-		e.log.Error(fmt.Sprintf("error stopping worker pool: %v", err))
-	}
+    e.queue.Close()
 
-	e.log.Info(fmt.Sprintf("engine stopped: campaign_id=%s, sent=%d, failed=%d, duration=%v",
-		e.campaign.ID, e.stats.SentCount, e.stats.FailedCount, time.Since(e.startTime)))
+    if err := e.workerPool.Stop(ctx); err != nil {
+        e.log.Error(fmt.Sprintf("error stopping worker pool: %v", err))
+    }
 
-	return nil
+    e.log.Info(fmt.Sprintf("engine stopped: campaign_id=%s, sent=%d, failed=%d, duration=%v",
+        e.campaign.ID, e.stats.SentCount, e.stats.FailedCount, time.Since(e.startTime)))
+
+    return nil
 }
+
 
 func (e *Engine) Pause(ctx context.Context) error {
 	if !e.running.Load() {
