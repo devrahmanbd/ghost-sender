@@ -288,41 +288,55 @@ func (m *Manager) PauseCampaign(ctx context.Context, campaignID string) error {
 }
 
 func (m *Manager) ResumeCampaign(ctx context.Context, campaignID string) error {
-	m.mu.RLock()
-	instance, exists := m.campaigns[campaignID]
-	m.mu.RUnlock()
+    m.mu.RLock()
+    instance, exists := m.campaigns[campaignID]
+    m.mu.RUnlock()
+    if !exists {
+        return ErrCampaignNotFound
+    }
 
-	if !exists {
-		return ErrCampaignNotFound
-	}
+    instance.mu.Lock()
+    defer instance.mu.Unlock()
 
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
+    if instance.State.Status != models.CampaignStatusPaused {
+        return fmt.Errorf("%w: campaign is not paused", ErrInvalidCampaignState)
+    }
 
-	if instance.State.Status != models.CampaignStatusPaused {
-		return fmt.Errorf("%w: campaign is not paused", ErrInvalidCampaignState)
-	}
+    // ✅ Resume running executor if it exists (live pause)
+    if instance.Executor != nil {
+        if err := instance.Executor.Resume(ctx); err != nil {
+            return fmt.Errorf("failed to resume executor: %w", err)
+        }
+    } else {
+        // ✅ Executor is nil = server restart case — restart from checkpoint
+        processedCount := instance.Stats.Sent + instance.Stats.Failed
+        fmt.Printf("DEBUG ResumeCampaign: restarting from checkpoint offset=%d\n", processedCount)
 
-	if instance.Executor != nil {
-		if err := instance.Executor.Resume(ctx); err != nil {
-			return fmt.Errorf("failed to resume executor: %w", err)
-		}
-	}
+        executorInstance, err := m.executor.StartFromCheckpoint(ctx, instance.Campaign, processedCount)
+        if err != nil {
+            return fmt.Errorf("failed to restart executor from checkpoint: %w", err)
+        }
+        instance.Executor = executorInstance
+    }
 
-	instance.State.Status = models.CampaignStatusRunning
-	instance.Campaign.Status = models.CampaignStatusRunning
-	instance.Campaign.UpdatedAt = time.Now()
+    instance.State.Status = models.CampaignStatusRunning
+    instance.Campaign.Status = models.CampaignStatusRunning
+    instance.Campaign.UpdatedAt = time.Now()
 
-	if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
-		return fmt.Errorf("failed to update campaign: %w", err)
-	}
+    if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
+        return fmt.Errorf("failed to update campaign: %w", err)
+    }
 
-	m.log.Info("campaign resumed", logger.String("campaign_id", campaignID))
+    m.log.Info("campaign resumed", logger.String("campaign_id", campaignID))
+    m.broadcastCampaignEvent(campaignID, "resumed", map[string]interface{}{
+        "resumed_at": time.Now(),
+    })
 
-	m.broadcastCampaignEvent(campaignID, "resumed", nil)
+    go m.monitorCampaign(ctx, instance)
 
-	return nil
+    return nil
 }
+
 func (m *Manager) StopCampaign(ctx context.Context, campaignID string) error {
 	m.mu.RLock()
 	instance, exists := m.campaigns[campaignID]
@@ -598,33 +612,45 @@ func (m *Manager) checkpointLoop(interval time.Duration) {
 }
 
 func (m *Manager) saveCheckpoints() {
-	m.mu.RLock()
-	campaigns := make([]*CampaignInstance, 0, len(m.campaigns))
-	for _, instance := range m.campaigns {
-		instance.mu.RLock()
-		if instance.State.Status == models.CampaignStatusRunning {
-			campaigns = append(campaigns, instance)
-		}
-		instance.mu.RUnlock()
-	}
-	m.mu.RUnlock()
+    m.mu.RLock()
+    instances := make([]*CampaignInstance, 0)
+    for _, inst := range m.campaigns {
+        inst.mu.RLock()
+        if inst.State.Status == models.CampaignStatusRunning {
+            instances = append(instances, inst)
+        }
+        inst.mu.RUnlock()
+    }
+    m.mu.RUnlock()
 
-	for _, instance := range campaigns {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if m.persistence != nil {
-			if err := m.persistence.SaveState(ctx, instance.Campaign.ID, instance.State); err != nil {
-				m.log.Error("checkpoint save failed",
-					logger.String("campaign_id", instance.Campaign.ID),
-					logger.String("error", err.Error()))
-			} else {
-				instance.mu.Lock()
-				instance.LastCheckpoint = time.Now()
-				instance.mu.Unlock()
-			}
-		}
-		cancel()
-	}
+    for _, inst := range instances {
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+        inst.mu.RLock()
+        campaignID := inst.Campaign.ID
+        sent := int(inst.Stats.Sent)
+        failed := int(inst.Stats.Failed)
+        pending := int(inst.Stats.Pending)
+        inst.mu.RUnlock()
+
+        // ✅ Persist live progress so resume knows where to start
+        if err := m.repo.UpdateProgress(ctx, campaignID, sent, failed, pending); err != nil {
+            m.log.Error("checkpoint save failed",
+                logger.String("campaign_id", campaignID),
+                logger.String("error", err.Error()),
+            )
+        } else {
+            inst.mu.Lock()
+            inst.LastCheckpoint = time.Now()
+            inst.mu.Unlock()
+            fmt.Printf("DEBUG checkpoint saved: id=%s sent=%d failed=%d pending=%d\n",
+                campaignID, sent, failed, pending)
+        }
+
+        cancel()
+    }
 }
+
 
 func (m *Manager) cleanupLoop(interval time.Duration) {
 	defer m.wg.Done()
@@ -886,7 +912,6 @@ func (m *Manager) loadFromDB(ctx context.Context) error {
     fmt.Printf("DEBUG loadFromDB: START — calling repo.List\n")
     rows, _, err := m.repo.List(ctx, &repository.CampaignFilter{IncludeArchived: false})
     if err != nil {
-        fmt.Printf("DEBUG loadFromDB: repo.List FAILED: %v\n", err)
         return fmt.Errorf("loadFromDB: %w", err)
     }
     fmt.Printf("DEBUG loadFromDB: repo.List returned %d rows\n", len(rows))
@@ -896,18 +921,24 @@ func (m *Manager) loadFromDB(ctx context.Context) error {
         state := NewCampaignState(c.ID)
         state.Status = c.Status
 
-        // ✅ Campaigns marked "running" in DB means the server crashed mid-run.
-        // Reset to "failed" so statsUpdateLoop never calls GetStats on a nil Executor.
+        // ✅ running on startup = server crashed mid-run → pause, not fail
+        // Operator can then resume manually or auto-resume below
         if c.Status == models.CampaignStatusRunning {
-            c.Status = models.CampaignStatusFailed
-            state.Status = models.CampaignStatusFailed
-            fmt.Printf("DEBUG loadFromDB: reset stale running→failed for id=%s\n", c.ID)
-
-            // Persist the reset so DB is consistent
+            c.Status = models.CampaignStatusPaused
+            state.Status = models.CampaignStatusPaused
+            fmt.Printf("DEBUG loadFromDB: reset stale running→paused for id=%s\n", c.ID)
             if err := m.repo.Update(ctx, m.toRepositoryCampaign(c)); err != nil {
                 fmt.Printf("DEBUG loadFromDB: failed to persist reset for id=%s: %v\n", c.ID, err)
             }
         }
+
+        // ✅ Restore checkpoint progress into state
+        state.Progress.ProcessedCount = int64(rc.SentCount + rc.FailedCount)
+        state.Progress.SuccessCount = int64(rc.SentCount)
+        state.Progress.FailedCount = int64(rc.FailedCount)
+        state.Progress.RemainingCount = int64(rc.TotalRecipients) - state.Progress.ProcessedCount
+        state.CurrentRecipient = state.Progress.ProcessedCount
+        state.TotalRecipients = int64(rc.TotalRecipients)
 
         stats := &CampaignStats{
             TotalRecipients: int64(rc.TotalRecipients),
@@ -919,17 +950,16 @@ func (m *Manager) loadFromDB(ctx context.Context) error {
         }
 
         m.campaigns[c.ID] = &CampaignInstance{
-            Campaign: c,
-            State:    state,
-            Stats:    stats,
-            // Executor intentionally nil — only set when campaign is actually started
+            Campaign:       c,
+            State:          state,
+            Stats:          stats,
+            LastCheckpoint: rc.UpdatedAt, // ✅ restore last known checkpoint time
         }
     }
 
     fmt.Printf("DEBUG loadFromDB: loaded %d campaigns into memory\n", len(m.campaigns))
     return nil
 }
-
 
 // fromRepositoryCampaign converts a flat repository.Campaign row to *models.Campaign.
 func (m *Manager) fromRepositoryCampaign(rc *repository.Campaign) *models.Campaign {

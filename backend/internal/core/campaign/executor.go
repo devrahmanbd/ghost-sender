@@ -726,3 +726,67 @@ func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instan
 
     return instance, nil
 }
+func (e *Executor) StartFromCheckpoint(ctx context.Context, campaign *models.Campaign, processedCount int64) (instance *ExecutorInstance, err error) {
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("executor.StartFromCheckpoint panic: %v", r)
+            e.log.Error("executor.StartFromCheckpoint panic", logger.Any("panic", r))
+        }
+    }()
+
+    e.senderEngine.SetCampaign(campaign)
+    if !e.senderEngine.IsRunning() {
+        if err := e.senderEngine.Start(ctx); err != nil {
+            return nil, fmt.Errorf("failed to start sender engine: %w", err)
+        }
+    }
+
+    allRecipients, err := e.loadRecipients(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load recipients: %w", err)
+    }
+
+    // ✅ Skip already-processed recipients using checkpoint offset
+    offset := int(processedCount)
+    if offset >= len(allRecipients) {
+        return nil, fmt.Errorf("campaign already fully processed: offset=%d total=%d", offset, len(allRecipients))
+    }
+    remaining := allRecipients[offset:]
+    fmt.Printf("🟢 DEBUG StartFromCheckpoint: skipping %d, processing remaining %d\n", offset, len(remaining))
+
+    accounts, err := e.loadAccounts(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load accounts: %w", err)
+    }
+    if len(accounts) == 0 {
+        return nil, ErrNoAccounts
+    }
+
+    templates, err := e.loadTemplates(ctx, campaign)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load templates: %w", err)
+    }
+
+    instance = &ExecutorInstance{
+        campaign:       campaign,
+        state:          NewExecutionState(),
+        recipients:     remaining,   // ✅ only unprocessed
+        templates:      templates,
+        accounts:       accounts,
+        stats:          NewExecutionStats(int64(len(remaining))),
+        senderInstance: e.senderEngine,
+        pauseChan:      make(chan struct{}),
+        resumeChan:     make(chan struct{}),
+        stopChan:       make(chan struct{}),
+    }
+
+    go instance.run(ctx, e)
+
+    e.log.Info("executor resumed from checkpoint",
+        logger.String("campaign_id", campaign.ID),
+        logger.Int64("skipped", processedCount),
+        logger.Int("remaining", len(remaining)),
+    )
+
+    return instance, nil
+}
