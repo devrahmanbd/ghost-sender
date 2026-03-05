@@ -511,22 +511,23 @@ func (r *CampaignRepository) GetByID(ctx context.Context, id string) (*Campaign,
 			error_message, last_checkpoint, checkpoint_data, retry_count, max_retries,
 			created_at, updated_at, created_by, updated_by, is_archived, archived_at
 		FROM campaigns
-		WHERE id = $1 AND is_archived = false`
+		WHERE id = $1 AND (is_archived = false OR is_archived IS NULL)`
 
 	campaign := &Campaign{}
 	var configJSON, metadataJSON, checkpointJSON []byte
+	var errorMessage, createdBy, updatedBy, description sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&campaign.ID, &campaign.Name, &campaign.Description, &campaign.Status, &campaign.State,
+		&campaign.ID, &campaign.Name, &description, &campaign.Status, &campaign.State,
 		&campaign.Priority, &campaign.ScheduledAt, &campaign.StartedAt, &campaign.CompletedAt,
 		&campaign.PausedAt, &campaign.FailedAt, &campaign.TotalRecipients, &campaign.SentCount,
 		&campaign.FailedCount, &campaign.PendingCount, &campaign.SuccessRate, &campaign.Progress,
 		&campaign.Throughput, &campaign.EstimatedETA, &configJSON, pq.Array(&campaign.TemplateIDs),
 		pq.Array(&campaign.AccountIDs), &campaign.RecipientListID, pq.Array(&campaign.ProxyIDs),
-		pq.Array(&campaign.Tags), &metadataJSON, &campaign.ErrorMessage, &campaign.LastCheckpoint,
+		pq.Array(&campaign.Tags), &metadataJSON, &errorMessage, &campaign.LastCheckpoint,
 		&checkpointJSON, &campaign.RetryCount, &campaign.MaxRetries, &campaign.CreatedAt,
-		&campaign.UpdatedAt, &campaign.CreatedBy, &campaign.UpdatedBy, &campaign.IsArchived,
-		&campaign.ArchivedAt,
+		&campaign.UpdatedAt, &campaign.CreatedBy, &campaign.UpdatedBy,  &createdBy, &updatedBy, 
+		&campaign.IsArchived, &campaign.ArchivedAt,
 	)
 
 	if err != nil {
@@ -535,6 +536,10 @@ func (r *CampaignRepository) GetByID(ctx context.Context, id string) (*Campaign,
 		}
 		return nil, err
 	}
+	campaign.Description  = description.String
+	campaign.ErrorMessage = errorMessage.String
+	campaign.CreatedBy    = createdBy.String
+	campaign.UpdatedBy    = updatedBy.String
 
 	if len(configJSON) > 0 {
 		json.Unmarshal(configJSON, &campaign.Config)
@@ -560,7 +565,7 @@ func (r *CampaignRepository) Update(ctx context.Context, campaign *Campaign) err
 			recipient_list_id = $23, proxy_ids = $24, tags = $25, metadata = $26,
 			error_message = $27, last_checkpoint = $28, checkpoint_data = $29,
 			retry_count = $30, max_retries = $31, updated_at = $32, updated_by = $33
-		WHERE id = $1 AND is_archived = false`
+		WHERE id = $1 AND (is_archived = false OR is_archived IS NULL)`
 
 	configJSON, _ := json.Marshal(campaign.Config)
 	metadataJSON, _ := json.Marshal(campaign.Metadata)
@@ -619,7 +624,7 @@ func (r *CampaignRepository) List(ctx context.Context, filter *CampaignFilter) (
 	argPos := 1
 
 	if !filter.IncludeArchived {
-		whereClauses = append(whereClauses, "is_archived = false")
+		whereClauses = append(whereClauses, "(is_archived IS NULL OR is_archived = false)")
 	}
 
 	if len(filter.IDs) > 0 {
@@ -746,93 +751,98 @@ func (r *CampaignRepository) List(ctx context.Context, filter *CampaignFilter) (
 		whereClause, sortBy, sortOrder, argPos, argPos+1)
 
 	args = append(args, limit, offset)
+    rows, err := r.db.QueryContext(ctx, query, args...)
+    if err != nil {
+        return nil, 0, err
+    }
+    defer rows.Close()
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
+    campaigns := []*Campaign{}
+    for rows.Next() {
+        campaign := &Campaign{}
+        var configJSON, metadataJSON, checkpointJSON []byte
+        var errorMessage, createdBy, updatedBy, description sql.NullString
 
-	campaigns := []*Campaign{}
-	for rows.Next() {
-		campaign := &Campaign{}
-		var configJSON, metadataJSON, checkpointJSON []byte
+        err := rows.Scan(
+            &campaign.ID, &campaign.Name, &description, &campaign.Status, &campaign.State,
+            &campaign.Priority, &campaign.ScheduledAt, &campaign.StartedAt, &campaign.CompletedAt,
+            &campaign.PausedAt, &campaign.FailedAt, &campaign.TotalRecipients, &campaign.SentCount,
+            &campaign.FailedCount, &campaign.PendingCount, &campaign.SuccessRate, &campaign.Progress,
+            &campaign.Throughput, &campaign.EstimatedETA, &configJSON, pq.Array(&campaign.TemplateIDs),
+            pq.Array(&campaign.AccountIDs), &campaign.RecipientListID, pq.Array(&campaign.ProxyIDs),
+            pq.Array(&campaign.Tags), &metadataJSON, &errorMessage, &campaign.LastCheckpoint,
+            &checkpointJSON, &campaign.RetryCount, &campaign.MaxRetries, &campaign.CreatedAt,
+            &campaign.UpdatedAt, &createdBy, &updatedBy, &campaign.IsArchived,
+            &campaign.ArchivedAt,
+        )
+        if err != nil {
+            return nil, 0, err
+        }
 
-		err := rows.Scan(
-			&campaign.ID, &campaign.Name, &campaign.Description, &campaign.Status, &campaign.State,
-			&campaign.Priority, &campaign.ScheduledAt, &campaign.StartedAt, &campaign.CompletedAt,
-			&campaign.PausedAt, &campaign.FailedAt, &campaign.TotalRecipients, &campaign.SentCount,
-			&campaign.FailedCount, &campaign.PendingCount, &campaign.SuccessRate, &campaign.Progress,
-			&campaign.Throughput, &campaign.EstimatedETA, &configJSON, pq.Array(&campaign.TemplateIDs),
-			pq.Array(&campaign.AccountIDs), &campaign.RecipientListID, pq.Array(&campaign.ProxyIDs),
-			pq.Array(&campaign.Tags), &metadataJSON, &campaign.ErrorMessage, &campaign.LastCheckpoint,
-			&checkpointJSON, &campaign.RetryCount, &campaign.MaxRetries, &campaign.CreatedAt,
-			&campaign.UpdatedAt, &campaign.CreatedBy, &campaign.UpdatedBy, &campaign.IsArchived,
-			&campaign.ArchivedAt,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
+        campaign.ErrorMessage = errorMessage.String
+        campaign.CreatedBy = createdBy.String
+        campaign.UpdatedBy = updatedBy.String
+		campaign.Description = description.String
 
-		if len(configJSON) > 0 {
-			json.Unmarshal(configJSON, &campaign.Config)
-		}
-		if len(metadataJSON) > 0 {
-			json.Unmarshal(metadataJSON, &campaign.Metadata)
-		}
-		if len(checkpointJSON) > 0 {
-			json.Unmarshal(checkpointJSON, &campaign.CheckpointData)
-		}
+        if len(configJSON) > 0 {
+            json.Unmarshal(configJSON, &campaign.Config)
+        }
+        if len(metadataJSON) > 0 {
+            json.Unmarshal(metadataJSON, &campaign.Metadata)
+        }
+        if len(checkpointJSON) > 0 {
+            json.Unmarshal(checkpointJSON, &campaign.CheckpointData)
+        }
 
-		campaigns = append(campaigns, campaign)
-	}
+        campaigns = append(campaigns, campaign)
+    }
 
-	return campaigns, total, nil
+    if err := rows.Err(); err != nil {
+        return nil, 0, err
+    }
+
+    return campaigns, total, nil
 }
 
 func (r *CampaignRepository) UpdateStatus(ctx context.Context, id, status string, updatedBy string) error {
 	query := `
 		UPDATE campaigns SET status = $2, updated_at = $3, updated_by = $4
-		WHERE id = $1 AND is_archived = false`
+		WHERE id = $1 AND (is_archived = false OR is_archived IS NULL)`
 
 	result, err := r.db.ExecContext(ctx, query, id, status, time.Now(), updatedBy)
 	if err != nil {
 		return err
 	}
-
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-
 	if rows == 0 {
 		return fmt.Errorf("campaign not found")
 	}
-
 	return nil
 }
+
 
 func (r *CampaignRepository) UpdateState(ctx context.Context, id, state string) error {
 	query := `
 		UPDATE campaigns SET state = $2, updated_at = $3
-		WHERE id = $1 AND is_archived = false`
+		WHERE id = $1 AND (is_archived = false OR is_archived IS NULL)`
 
 	result, err := r.db.ExecContext(ctx, query, id, state, time.Now())
 	if err != nil {
 		return err
 	}
-
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-
 	if rows == 0 {
 		return fmt.Errorf("campaign not found")
 	}
-
 	return nil
 }
+
 
 func (r *CampaignRepository) UpdateProgress(ctx context.Context, id string, sent, failed, pending int) error {
 	query := `

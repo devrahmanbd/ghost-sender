@@ -53,6 +53,7 @@ func NewRouter(
 	api.Use(rateLimitMiddleware.Handler)
 
 	campaigns := api.PathPrefix("/campaigns").Subrouter()
+	campaigns.StrictSlash(true)
 	campaigns.HandleFunc("", campaignHandler.ListCampaigns).Methods(http.MethodGet)
 	campaigns.HandleFunc("", campaignHandler.CreateCampaign).Methods(http.MethodPost)
 	campaigns.HandleFunc("/{id}", campaignHandler.GetCampaign).Methods(http.MethodGet)

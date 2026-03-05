@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
+	stderrors "errors"
 	"github.com/gorilla/mux"
 
 	"email-campaign-system/internal/api/websocket"
@@ -155,10 +155,12 @@ func (h *CampaignHandler) CreateCampaign(w http.ResponseWriter, r *http.Request)
         },
       },
 	}
-
 	if req.ScheduledAt != nil {
-		camp.Schedule.ScheduledStartTime = req.ScheduledAt
+		camp.Schedule = &models.CampaignSchedule{
+			ScheduledStartTime: req.ScheduledAt,
+		}
 	}
+
 
 	if err := h.campaignManager.CreateCampaign(ctx, camp); err != nil {
 		fmt.Printf("DEBUG CreateCampaign error: %v\n", err)  
@@ -217,14 +219,12 @@ func (h *CampaignHandler) ListCampaigns(w http.ResponseWriter, r *http.Request) 
 		"total_pages": (total + pageSize - 1) / pageSize,
 	})
 }
-
 func (h *CampaignHandler) GetCampaign(w http.ResponseWriter, r *http.Request) {
-	_ = r.Context()
+	ctx := r.Context()
 	vars := mux.Vars(r)
-
 	id := vars["id"]
 
-	camp, err := h.campaignManager.GetCampaign(id)
+	camp, err := h.campaignManager.GetCampaign(ctx, id)
 	if err != nil {
 		h.logger.Error("Failed to get campaign", logger.Field{Key: "campaign_id", Value: id}, logger.Field{Key: "error", Value: err})
 		h.respondError(w, err)
@@ -234,10 +234,10 @@ func (h *CampaignHandler) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, h.toCampaignResponse(camp))
 }
 
-func (h *CampaignHandler) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	_ = r.Context()
-	vars := mux.Vars(r)
 
+func (h *CampaignHandler) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
 	id := vars["id"]
 
 	var req UpdateCampaignRequest
@@ -245,13 +245,13 @@ func (h *CampaignHandler) UpdateCampaign(w http.ResponseWriter, r *http.Request)
 		h.respondError(w, errors.BadRequest("Invalid request body"))
 		return
 	}
-	fmt.Printf("DEBUG req after decode: %+v\n", req) 
+	fmt.Printf("DEBUG req after decode: %+v\n", req)
 	if err := h.validator.Validate(req); err != nil {
 		h.respondError(w, errors.ValidationFailed(err.Error()))
 		return
 	}
 
-	camp, err := h.campaignManager.GetCampaign(id)
+	camp, err := h.campaignManager.GetCampaign(ctx, id)
 	if err != nil {
 		h.logger.Error("Failed to get campaign for update", logger.Field{Key: "campaign_id", Value: id}, logger.Field{Key: "error", Value: err})
 		h.respondError(w, err)
@@ -278,7 +278,14 @@ func (h *CampaignHandler) UpdateCampaign(w http.ResponseWriter, r *http.Request)
 	}
 
 	camp.UpdatedAt = time.Now()
-
+	if err := h.campaignManager.UpdateCampaign(ctx, camp); err != nil {
+		h.logger.Error("Failed to update campaign",
+			logger.Field{Key: "campaign_id", Value: id},
+			logger.Field{Key: "error", Value: err},
+		)
+		h.respondError(w, err)
+		return
+	}
 	h.logger.Info("Campaign updated successfully", logger.Field{Key: "campaign_id", Value: camp.ID})
 
 	campJSON, _ := json.Marshal(camp)
@@ -289,6 +296,7 @@ func (h *CampaignHandler) UpdateCampaign(w http.ResponseWriter, r *http.Request)
 
 	h.respondJSON(w, http.StatusOK, h.toCampaignResponse(camp))
 }
+
 
 func (h *CampaignHandler) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -316,37 +324,32 @@ func (h *CampaignHandler) DeleteCampaign(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *CampaignHandler) StartCampaign(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
+    vars := mux.Vars(r)
+    id := vars["id"]
 
-	id := vars["id"]
+    fmt.Printf("DEBUG StartCampaign: ENTER id=%s\n", id)
 
-	if err := h.campaignManager.StartCampaign(ctx, id); err != nil {
-		h.logger.Error("Failed to start campaign", logger.Field{Key: "campaign_id", Value: id}, logger.Field{Key: "error", Value: err})
-		h.respondError(w, err)
-		return
-	}
+    if err := h.campaignManager.StartCampaign(r.Context(), id); err != nil {
+        fmt.Printf("DEBUG StartCampaign: FAILED id=%s err=%v\n", id, err)
+        h.logger.Error("Failed to start campaign",
+            logger.Field{Key: "campaign_id", Value: id},
+            logger.Field{Key: "error", Value: err},
+        )
+        h.respondError(w, err)
+        return
+    }
 
-	camp, _ := h.campaignManager.GetCampaign(id)
-
-	h.logger.Info("Campaign started successfully", logger.Field{Key: "campaign_id", Value: id})
-
-	campJSON, _ := json.Marshal(camp)
-	h.wsHub.Broadcast(&websocket.Message{
-		Type: "campaign_started",
-		Data: json.RawMessage(campJSON),
-	})
-
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":  "Campaign started successfully",
-		"campaign": h.toCampaignResponse(camp),
-	})
+    fmt.Printf("DEBUG StartCampaign: SUCCESS id=%s\n", id)
+    h.respondJSON(w, http.StatusOK, map[string]interface{}{
+        "message":     "campaign started",
+        "campaign_id": id,
+    })
 }
+
 
 func (h *CampaignHandler) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
-
 	id := vars["id"]
 
 	if err := h.campaignManager.PauseCampaign(ctx, id); err != nil {
@@ -355,7 +358,7 @@ func (h *CampaignHandler) PauseCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	camp, _ := h.campaignManager.GetCampaign(id)
+	camp, _ := h.campaignManager.GetCampaign(ctx, id)
 
 	h.logger.Info("Campaign paused successfully", logger.Field{Key: "campaign_id", Value: id})
 
@@ -370,11 +373,9 @@ func (h *CampaignHandler) PauseCampaign(w http.ResponseWriter, r *http.Request) 
 		"campaign": h.toCampaignResponse(camp),
 	})
 }
-
 func (h *CampaignHandler) ResumeCampaign(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
-
 	id := vars["id"]
 
 	if err := h.campaignManager.ResumeCampaign(ctx, id); err != nil {
@@ -383,7 +384,7 @@ func (h *CampaignHandler) ResumeCampaign(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	camp, _ := h.campaignManager.GetCampaign(id)
+	camp, _ := h.campaignManager.GetCampaign(ctx, id)
 
 	h.logger.Info("Campaign resumed successfully", logger.Field{Key: "campaign_id", Value: id})
 
@@ -402,7 +403,6 @@ func (h *CampaignHandler) ResumeCampaign(w http.ResponseWriter, r *http.Request)
 func (h *CampaignHandler) StopCampaign(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
-
 	id := vars["id"]
 
 	if err := h.campaignManager.StopCampaign(ctx, id); err != nil {
@@ -411,7 +411,7 @@ func (h *CampaignHandler) StopCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	camp, _ := h.campaignManager.GetCampaign(id)
+	camp, _ := h.campaignManager.GetCampaign(ctx, id)
 
 	h.logger.Info("Campaign stopped successfully", logger.Field{Key: "campaign_id", Value: id})
 
@@ -427,13 +427,13 @@ func (h *CampaignHandler) StopCampaign(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Request) {
-	_ = r.Context()
-	vars := mux.Vars(r)
 
+func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
 	id := vars["id"]
 
-	camp, err := h.campaignManager.GetCampaign(id)
+	camp, err := h.campaignManager.GetCampaign(ctx, id)
 	if err != nil {
 		h.logger.Error("Failed to get campaign status", logger.Field{Key: "campaign_id", Value: id}, logger.Field{Key: "error", Value: err})
 		h.respondError(w, err)
@@ -447,13 +447,13 @@ func (h *CampaignHandler) GetCampaignStatus(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (h *CampaignHandler) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
-	_ = r.Context()
-	vars := mux.Vars(r)
 
+func (h *CampaignHandler) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
 	id := vars["id"]
 
-	stats, err := h.campaignManager.GetCampaignStats(id)
+	stats, err := h.campaignManager.GetCampaignStats(ctx, id)
 	if err != nil {
 		h.logger.Error("Failed to get campaign stats", logger.Field{Key: "campaign_id", Value: id}, logger.Field{Key: "error", Value: err})
 		h.respondError(w, err)
@@ -622,21 +622,42 @@ func (h *CampaignHandler) respondJSON(w http.ResponseWriter, status int, data in
 	json.NewEncoder(w).Encode(data)
 }
 
-func (h CampaignHandler) respondError(w http.ResponseWriter, err error) {
+func (h *CampaignHandler) respondError(w http.ResponseWriter, err error) {
 	var status int
 	var message string
+
 	switch e := err.(type) {
-	case *errors.AppError:
+	case *errors.Error:
 		status = e.StatusCode
 		message = e.Message
 	default:
-		status = http.StatusInternalServerError
-		// Log the real error server-side; never leak internals to the client
-		fmt.Printf("DEBUG respondError: internal error: %v\n", err)
-		h.logger.Error("campaign handler internal error", logger.Field{Key: "error", Value: err.Error()})
-		message = "Internal server error"
+		switch {
+		case stderrors.Is(err, campaign.ErrCampaignNotFound):
+			status = http.StatusNotFound
+			message = err.Error()
+		case stderrors.Is(err, campaign.ErrCampaignAlreadyExists),
+			stderrors.Is(err, campaign.ErrCampaignAlreadyRunning):
+			status = http.StatusConflict
+			message = err.Error()
+		case stderrors.Is(err, campaign.ErrCampaignNotRunning),
+			stderrors.Is(err, campaign.ErrInvalidCampaignState),
+			stderrors.Is(err, campaign.ErrCampaignCompleted):
+			status = http.StatusUnprocessableEntity
+			message = err.Error()
+		default:
+			fmt.Printf("DEBUG respondError: internal error: %v\n", err)
+			h.logger.Error("campaign handler internal error", logger.Field{Key: "error", Value: err.Error()})
+			status = http.StatusInternalServerError
+			message = "Internal server error"
+		}
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{"error": message, "status": status, "success": false})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":   message,
+		"status":  status,
+		"success": false,
+	})
 }
+

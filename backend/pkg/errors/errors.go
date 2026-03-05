@@ -28,7 +28,17 @@ type StackFrame struct {
 	Line     int    `json:"line"`
 	Function string `json:"function"`
 }
-
+ func Conflict(message string) *Error {
+	return &Error{
+		Code:       ErrConflict,
+		Message:    "Conflict",
+		Details:    message,
+		StatusCode: http.StatusConflict,
+		Timestamp:  time.Now(),
+        Stack:      captureStack(2),
+        Retryable:  false,
+     }
+ }
 func (e *Error) Error() string {
 	if e.Err != nil {
 		return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.Err)

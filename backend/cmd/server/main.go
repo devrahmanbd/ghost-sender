@@ -30,6 +30,7 @@ import (
 	"email-campaign-system/pkg/crypto"
 	"email-campaign-system/pkg/logger"
 	"email-campaign-system/pkg/validator"
+	"email-campaign-system/internal/core/sender"
 )
 
 const (
@@ -230,7 +231,6 @@ func initializeApp(db *sql.DB, cfg *config.AppConfig, log logger.Logger) (*Appli
 		Services:    services,
 	}, nil
 }
-
 func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppConfig, log logger.Logger, wsHub *websocket.Hub) (*CoreServices, error) {
 	log.Info("🔧 Initializing core services...")
 
@@ -256,6 +256,9 @@ func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppC
 		return nil, fmt.Errorf("failed to create account manager: %w", err)
 	}
 	log.Info("  ✓ Account manager initialized")
+
+	// FIX 1: repos.account is already *repository.AccountRepository — do NOT dereference
+	simpleAcctMgr := account.NewManager(repos.account)
 
 	recipientMgr := recipient.NewRecipientManager(
 		*repos.recipient,
@@ -298,9 +301,9 @@ func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppC
 	}
 	log.Info("  ✓ Attachment manager initialized")
 
-	// ── Sender Engine (real SMTP delivery) ────────────────────────────
+	// FIX 2: simpleAcctMgr is already *account.Manager — do NOT take its address
 	senderEngine := sender.NewEngine(
-		accountMgr,
+		simpleAcctMgr,
 		newSenderTemplateAdapter(*repos.template, log),
 		attachmentMgr,
 		personalizationMgr,
@@ -324,15 +327,15 @@ func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppC
 	)
 	log.Info("  ✓ Sender engine created")
 
-	// ── Campaign Executor ──────────────────────────────────────────────
+	// FIX 3: same — simpleAcctMgr is already *account.Manager
 	campaignExecutor := campaign.NewExecutor(
 		senderEngine,
-		accountMgr,
+		simpleAcctMgr,
 		attachmentMgr,
 		personalizationMgr,
 		*repos.recipient,
-		*repos.template, // ← the templateRepo fix
-		*repos.log,
+		*repos.template,
+		repos.log,
 		*repos.stats,
 		log,
 		campaign.ExecutorConfig{
@@ -346,13 +349,12 @@ func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppC
 	)
 	log.Info("  ✓ Campaign executor created")
 
-	// ── Campaign Manager ───────────────────────────────────────────────
 	campaignManager := campaign.NewManager(
 		*repos.campaign,
-		*campaignExecutor, // ← was nil — this is the key fix
-		nil,               // Persistence (file-based, skip for now)
-		nil,               // Scheduler (add when you need scheduled sends)
-		nil,               // Cleanup (add when you need auto-purge)
+		campaignExecutor,
+		nil,
+		nil,
+		nil,
 		wsHub,
 		log,
 		campaign.ManagerConfig{

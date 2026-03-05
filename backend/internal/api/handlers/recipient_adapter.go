@@ -5,9 +5,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-
+	stderrors "errors"
 	"email-campaign-system/internal/core/recipient"
 	"email-campaign-system/internal/models"
+	pkgerrors "email-campaign-system/pkg/errors"
 )
 
 type recipientManagerAdapter struct {
@@ -31,14 +32,39 @@ func (a *recipientManagerAdapter) Create(ctx context.Context, req *CreateRecipie
 		LastName:   req.LastName,
 		Tags:       req.Tags,
 		CampaignID: campaignID,
+		Status:     models.RecipientStatusPending,
+		IsValid:    true,
 	}
 
 	if err := a.core.AddRecipient(ctx, &rec); err != nil {
+		fmt.Printf("🟢 DEBUG Adapter.Create: AddRecipient err=%v (type=%T)\n", err, err)
+		if stderrors.Is(err, recipient.ErrDuplicateRecipient) {
+			return nil, pkgerrors.Conflict("recipient already exists: " + req.Email)
+		}
 		return nil, err
 	}
 
-	return &rec, nil
+	created, err := a.core.GetByEmail(ctx, campaignID, req.Email)
+	if err != nil {
+		rec.IsValid = true
+		return &rec, nil
+	}
+
+	if created.FirstName == "" {
+		created.FirstName = req.FirstName
+	}
+	if created.LastName == "" {
+		created.LastName = req.LastName
+	}
+	if len(created.Tags) == 0 {
+		created.Tags = req.Tags
+	}
+	created.IsValid = true
+
+	return created, nil
 }
+
+
 
 func (a *recipientManagerAdapter) List(ctx context.Context, opts *ListRecipientOptions) ([]*models.Recipient, int, error) {
     if opts == nil {

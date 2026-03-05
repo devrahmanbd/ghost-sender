@@ -12,7 +12,6 @@ import (
 	"time"
 	"fmt"
 	"github.com/gorilla/mux"
-
 	"email-campaign-system/internal/api/websocket"
 	"email-campaign-system/internal/models"
 	"email-campaign-system/pkg/errors"
@@ -711,27 +710,30 @@ func (h *RecipientHandler) respondJSON(w http.ResponseWriter, status int, data i
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
-
 func (h *RecipientHandler) respondError(w http.ResponseWriter, err error) {
-	var status int
-	var message string
-	switch e := err.(type) {
-	case *errors.Error:
-		status = e.StatusCode
-		message = e.Message
-	default:
-		status = http.StatusInternalServerError
-		message = "Internal server error"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":   message,
-		"status":  status,
-		"success": false,
-	})
+    var status int
+    var message string
+
+    switch e := err.(type) {
+    case *errors.Error:          // value type — matches BadRequest/NotFound/Conflict/etc.
+        status = e.StatusCode
+        message = e.Message
+    default:
+         fmt.Printf("DEBUG respondError: internal error type=%T value=%v\n", err, err)
+         h.logger.Error("recipient handler internal error", logger.Field{Key: "error", Value: err.Error()})
+         status = http.StatusInternalServerError
+         message = "Internal server error"
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(status)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "error":   message,
+        "status":  status,
+        "success": false,
+    })
 }
-// DeduplicateRecipients removes duplicate recipients (alias for RemoveDuplicates)
+
 func (h *RecipientHandler) DeduplicateRecipients(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
 

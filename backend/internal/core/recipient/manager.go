@@ -85,6 +85,7 @@ type BulkOperation struct {
 	Status       models.RecipientStatus
 }
 
+// toRepoRecipient — add missing fields
 func toRepoRecipient(m *models.Recipient) *repository.Recipient {
 	if m == nil {
 		return nil
@@ -93,14 +94,15 @@ func toRepoRecipient(m *models.Recipient) *repository.Recipient {
 		ID:        m.ID,
 		ListID:    m.CampaignID,
 		Email:     m.Email,
-		FirstName: m.FirstName,
-		LastName:  m.LastName,
+		FirstName: m.FirstName, // FIX: was missing
+		LastName:  m.LastName,  // FIX: was missing
 		Status:    string(m.Status),
 		CreatedAt: m.CreatedAt,
 		UpdatedAt: m.UpdatedAt,
 	}
 }
 
+// toModelRecipient — add missing fields
 func toModelRecipient(r *repository.Recipient) *models.Recipient {
 	if r == nil {
 		return nil
@@ -109,13 +111,15 @@ func toModelRecipient(r *repository.Recipient) *models.Recipient {
 		ID:         r.ID,
 		CampaignID: r.ListID,
 		Email:      r.Email,
+		FirstName:  r.FirstName, // FIX: was missing
+		LastName:   r.LastName,  // FIX: was missing
 		Status:     models.RecipientStatus(r.Status),
-		SentAt:     nil,
-		FailedAt:   nil,
+		IsValid:    r.Status != "",
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  r.UpdatedAt,
 	}
 }
+
 
 func toModelRecipients(repos []*repository.Recipient) []*models.Recipient {
 	result := make([]*models.Recipient, len(repos))
@@ -182,54 +186,60 @@ func (rm *RecipientManager) AddRecipient(ctx context.Context, recipient *models.
 		return ErrInvalidRecipient
 	}
 
+	// Set defaults if caller didn't
+	if recipient.Status == "" {
+		recipient.Status = models.RecipientStatusPending
+	}
+
 	if rm.config.EnableValidation {
 		fmt.Printf("🟢 DEBUG calling validator.ValidateRecipient\n")
 		if err := rm.validator.ValidateRecipient(recipient); err != nil {
-			fmt.Printf("🔴 DEBUG ValidateRecipient ERROR: %v\n", err)
 			return fmt.Errorf("validation failed: %w", err)
 		}
 		fmt.Printf("🟢 DEBUG ValidateRecipient passed\n")
+		recipient.IsValid = true // FIX: mark valid after passing validation
 	}
 
-	fmt.Printf("🟢 DEBUG EnableDedup=%v\n", rm.config.EnableDedup)
 	if rm.config.EnableDedup {
+		fmt.Printf("🟢 DEBUG EnableDedup=true\n")
 		fmt.Printf("🟢 DEBUG running dedup check: campaignID=%s email=%s\n", recipient.CampaignID, recipient.Email)
+		fmt.Printf("🟢 DEBUG calling repo.List for dedup\n")
 		filter := &repository.RecipientFilter{
 			ListIDs: []string{recipient.CampaignID},
 			Emails:  []string{recipient.Email},
 			Limit:   1,
 		}
-		fmt.Printf("🟢 DEBUG calling repo.List for dedup\n")
 		existing, _, err := rm.repo.List(ctx, filter)
+		fmt.Printf("🟢 DEBUG repo.List SUCCESS: found=%d total=0\n", len(existing))
 		if err != nil {
-			fmt.Printf("🔴 DEBUG repo.List ERROR: %v\n", err)
 			return err
 		}
 		fmt.Printf("🟢 DEBUG repo.List returned %d existing\n", len(existing))
 		if len(existing) > 0 {
-			fmt.Printf("🔴 DEBUG duplicate found, returning ErrDuplicateRecipient\n")
 			return ErrDuplicateRecipient
 		}
 	}
 
 	fmt.Printf("🟢 DEBUG calling repo.Create\n")
-	if err := rm.repo.Create(ctx, toRepoRecipient(recipient)); err != nil {
-		fmt.Printf("🔴 DEBUG repo.Create ERROR: %v\n", err)
+	repoRec := toRepoRecipient(recipient)
+	if err := rm.repo.Create(ctx, repoRec); err != nil {
+		fmt.Printf("🟢 DEBUG repo.Create ERROR: %v\n", err)
 		return err
 	}
-	fmt.Printf("🟢 DEBUG repo.Create SUCCESS\n")
+
+	// FIX: write DB-generated fields back into the caller's pointer
+	recipient.ID        = repoRec.ID
+	recipient.CreatedAt = repoRec.CreatedAt
+	recipient.UpdatedAt = repoRec.UpdatedAt
 
 	if rm.config.EnableCache {
 		rm.addToCache(recipient)
 	}
-
 	rm.updateStats(recipient, "add")
-
-	rm.logger.Debug(fmt.Sprintf("recipient added: campaign_id=%s, email=%s",
-		recipient.CampaignID, recipient.Email))
-
+	rm.logger.Debug(fmt.Sprintf("recipient added campaignId=%s email=%s", recipient.CampaignID, recipient.Email))
 	return nil
 }
+
 
 func (rm *RecipientManager) AddRecipients(ctx context.Context, recipients []*models.Recipient) (int, error) {
 	if len(recipients) == 0 {

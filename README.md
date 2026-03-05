@@ -521,7 +521,7 @@ Feature List
 - Session security – Flask secret key + session management
 - Path traversal protection – Prevent directory traversal attacks
 - File upload validation – ZIP structure validation
-- HMAC signature validation – Secure unsubscribe link generation
+- HMAC signature validation – Secure unsubscribe link generationcl
 
 
 
@@ -535,7 +535,7 @@ Feature List
 curl -X POST http://localhost:8080/api/v1/campaigns \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Test Campaign Recipients",
+    "name": "Test Campaign",
     "description": "Test campaign for recipient testing",
     "status": "created",
     "subject_lines": ["Test Subject"],
@@ -555,7 +555,7 @@ curl -X POST http://localhost:8080/api/v1/campaigns \
   }'
 
 
-  curl -X POST http://localhost:8080/api/v1/accounts -H "Content-Type: application/json" -d '{"email":"backup11@cloudman.one","provider":"workspace","password":"sCi!@^5Bs*qvnkm7","sender_name":"Cloudman Backup","smtp_host":"cloudman.one","smtp_port":587,"use_tls":true,"use_ssl":false,"daily_limit":500,"rotation_limit":100}'
+  curl -X POST http://localhost:8080/api/v1/accounts -H "Content-Type: application/json" -d '{"email":"back2up11@cloudman.one","provider":"workspace","password":"sCi!@^5Bs*qvnkm7","sender_name":"Cloudman Backup","smtp_host":"cloudman.one","smtp_port":587,"use_tls":true,"use_ssl":false,"daily_limit":500,"rotation_limit":100}'
 
 
 curl -X POST http://localhost:8080/api/v1/templates \
@@ -573,3 +573,24 @@ curl -X POST http://localhost:8080/api/v1/templates \
       "track_clicks": true
     }
   }' | jq .
+
+
+
+
+curl -X POST http://localhost:8080/api/v1/recipients \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user2222@example.com", 
+    "first_name": "Jane",
+    "last_name": "Smith",
+    "campaign_id": "150d8959-ff3d-4c78-a0ef-205c97d40f42"
+  }'
+
+curl -X POST http://localhost:8080/api/v1/recipients \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user2522@example.com", 
+    "first_name": "Jane",
+    "last_name": "Smith",
+    "campaign_id": "150d8959-ff3d-4c78-a0ef-205c97d40f42"
+  }'

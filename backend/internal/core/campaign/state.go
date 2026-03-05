@@ -53,38 +53,55 @@ type StateMachine struct {
 }
 
 func NewStateMachine() *StateMachine {
-	sm := &StateMachine{
-		transitions: make(map[models.CampaignStatus][]models.CampaignStatus),
-	}
+    sm := &StateMachine{
+        transitions: make(map[models.CampaignStatus][]models.CampaignStatus),
+    }
 
-	sm.transitions[models.CampaignStatusCreated] = []models.CampaignStatus{
-		models.CampaignStatusRunning,
-		models.CampaignStatusFailed,
-	}
+    // created → can start or be scheduled
+    sm.transitions[models.CampaignStatusCreated] = []models.CampaignStatus{
+        models.CampaignStatusRunning,
+        models.CampaignStatusScheduled, // ✅ added
+        models.CampaignStatusFailed,
+    }
 
-	sm.transitions[models.CampaignStatusRunning] = []models.CampaignStatus{
-		models.CampaignStatusPaused,
-		models.CampaignStatusStopped,
-		models.CampaignStatusCompleted,
-		models.CampaignStatusFailed,
-	}
+    // scheduled → can be started or cancelled
+    sm.transitions[models.CampaignStatusScheduled] = []models.CampaignStatus{
+        models.CampaignStatusRunning,   // ✅ added
+        models.CampaignStatusStopped,   // ✅ added
+        models.CampaignStatusFailed,    // ✅ added
+    }
 
-	sm.transitions[models.CampaignStatusPaused] = []models.CampaignStatus{
-		models.CampaignStatusRunning,
-		models.CampaignStatusStopped,
-		models.CampaignStatusFailed,
-	}
+    // running → can pause, stop, complete, or fail
+    sm.transitions[models.CampaignStatusRunning] = []models.CampaignStatus{
+        models.CampaignStatusPaused,
+        models.CampaignStatusStopped,
+        models.CampaignStatusCompleted,
+        models.CampaignStatusFailed,
+    }
 
-	sm.transitions[models.CampaignStatusStopped] = []models.CampaignStatus{}
+    // paused → can resume, stop, or fail
+    sm.transitions[models.CampaignStatusPaused] = []models.CampaignStatus{
+        models.CampaignStatusRunning,
+        models.CampaignStatusStopped,
+        models.CampaignStatusFailed,
+    }
 
-	sm.transitions[models.CampaignStatusCompleted] = []models.CampaignStatus{}
+    // stopped → can be restarted ✅ added
+    sm.transitions[models.CampaignStatusStopped] = []models.CampaignStatus{
+        models.CampaignStatusRunning,
+    }
 
-	sm.transitions[models.CampaignStatusFailed] = []models.CampaignStatus{
-		models.CampaignStatusRunning,
-	}
+    // completed → terminal, no transitions
+    sm.transitions[models.CampaignStatusCompleted] = []models.CampaignStatus{}
 
-	return sm
+    // failed → can be retried
+    sm.transitions[models.CampaignStatusFailed] = []models.CampaignStatus{
+        models.CampaignStatusRunning,
+    }
+
+    return sm
 }
+
 
 func (sm *StateMachine) CanTransition(from, to models.CampaignStatus) bool {
 	sm.mu.RLock()

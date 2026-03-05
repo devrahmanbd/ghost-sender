@@ -26,21 +26,19 @@ func newSenderTemplateAdapter(repo repository.TemplateRepository, log logger.Log
 	return &senderTemplateAdapter{repo: repo, log: log}
 }
 
-// GetNextTemplate returns *models.Template — matches the sender.TemplateManager interface
 func (a *senderTemplateAdapter) GetNextTemplate(ctx context.Context) (*models.Template, error) {
 	templates, _, err := a.repo.List(ctx, nil)
 	if err != nil || len(templates) == 0 {
 		return nil, fmt.Errorf("no templates available")
 	}
 	t := templates[0]
-	tmpl := &models.Template{
+	return &models.Template{
 		ID:          t.ID,
 		HTMLContent: t.HtmlContent,
-	}
-	return tmpl, nil
+	}, nil
 }
 
-func (a *senderTemplateAdapter) Render(ctx context.Context, tmpl models.Template, data map[string]interface{}) (string, error) {
+func (a *senderTemplateAdapter) Render(ctx context.Context, tmpl *models.Template, data map[string]interface{}) (string, error) {
 	content := tmpl.HTMLContent
 	for k, v := range data {
 		content = strings.ReplaceAll(content, "{{"+k+"}}", fmt.Sprintf("%v", v))
@@ -55,7 +53,6 @@ func (a *senderTemplateAdapter) Render(ctx context.Context, tmpl models.Template
 
 type simpleDeliverabilityManager struct{}
 
-// BuildMessage takes *sender.MessageRequest and returns *sender.EmailMessage
 func (d *simpleDeliverabilityManager) BuildMessage(_ context.Context, req *sender.MessageRequest) (*sender.EmailMessage, error) {
 	return &sender.EmailMessage{
 		From:    req.From,
@@ -78,7 +75,6 @@ func newProviderFactoryAdapter(f *provider.ProviderFactory, log logger.Logger) s
 	return &providerFactoryAdapter{factory: f, log: log}
 }
 
-// GetProvider takes *models.Account — matches the sender.ProviderFactory interface
 func (p *providerFactoryAdapter) GetProvider(ctx context.Context, acc *models.Account) (sender.EmailProvider, error) {
 	if acc.Credentials == nil || acc.SMTPConfig == nil {
 		return nil, fmt.Errorf("account %s missing credentials or SMTP config", acc.Email)
@@ -118,9 +114,8 @@ type smtpEmailProvider struct {
 	name     string
 }
 
-// Send takes *sender.EmailMessage — matches the sender.EmailProvider interface
 func (s *smtpEmailProvider) Send(ctx context.Context, msg *sender.EmailMessage) (string, error) {
-	email := models.Email{
+	email := &models.Email{
 		From:     models.EmailAddress{Address: msg.From},
 		To:       models.EmailAddress{Address: msg.To},
 		Subject:  msg.Subject,
@@ -144,8 +139,8 @@ type noopRateLimiter struct{}
 func (n *noopRateLimiter) Wait(_ context.Context) error { return nil }
 
 // Compile-time interface checks
-var _ sender.TemplateManager      = (*senderTemplateAdapter)(nil)
+var _ sender.TemplateManager       = (*senderTemplateAdapter)(nil)
 var _ sender.DeliverabilityManager = (*simpleDeliverabilityManager)(nil)
-var _ sender.ProviderFactory      = (*providerFactoryAdapter)(nil)
-var _ sender.EmailProvider        = (*smtpEmailProvider)(nil)
-var _ sender.RateLimiter          = (*noopRateLimiter)(nil)
+var _ sender.ProviderFactory       = (*providerFactoryAdapter)(nil)
+var _ sender.EmailProvider         = (*smtpEmailProvider)(nil)
+var _ sender.RateLimiter           = (*noopRateLimiter)(nil)

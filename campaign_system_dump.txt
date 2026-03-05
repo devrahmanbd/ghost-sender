@@ -1,0 +1,4268 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict zcyltcs3DjJiDcWDXm8WKzKd0oVfeVIbJXgXuzog2dwM7YBWjiZyGybjam9A7IJ
+
+-- Dumped from database version 18.2 (Homebrew)
+-- Dumped by pg_dump version 18.2 (Homebrew)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
+
+
+--
+-- Name: uuid-ossp; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
+
+
+--
+-- Name: account_provider; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.account_provider AS ENUM (
+    'gmail',
+    'smtp',
+    'yahoo',
+    'outlook',
+    'hotmail',
+    'icloud',
+    'workspace'
+);
+
+
+ALTER TYPE public.account_provider OWNER TO rahman;
+
+--
+-- Name: account_status; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.account_status AS ENUM (
+    'active',
+    'suspended',
+    'failed',
+    'cooldown',
+    'disabled'
+);
+
+
+ALTER TYPE public.account_status OWNER TO rahman;
+
+--
+-- Name: campaign_status; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.campaign_status AS ENUM (
+    'created',
+    'scheduled',
+    'running',
+    'paused',
+    'completed',
+    'failed',
+    'cancelled'
+);
+
+
+ALTER TYPE public.campaign_status OWNER TO rahman;
+
+--
+-- Name: log_level; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.log_level AS ENUM (
+    'debug',
+    'info',
+    'warning',
+    'error',
+    'critical'
+);
+
+
+ALTER TYPE public.log_level OWNER TO rahman;
+
+--
+-- Name: notification_channel; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.notification_channel AS ENUM (
+    'telegram',
+    'email',
+    'webhook',
+    'slack'
+);
+
+
+ALTER TYPE public.notification_channel OWNER TO rahman;
+
+--
+-- Name: notification_event; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.notification_event AS ENUM (
+    'campaign_started',
+    'campaign_completed',
+    'campaign_failed',
+    'campaign_paused',
+    'campaign_resumed',
+    'account_suspended',
+    'account_recovered',
+    'daily_limit_reached',
+    'error_threshold_reached',
+    'system_error',
+    'low_health_score',
+    'proxy_failed',
+    'high_spam_score'
+);
+
+
+ALTER TYPE public.notification_event OWNER TO rahman;
+
+--
+-- Name: notification_priority; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.notification_priority AS ENUM (
+    'low',
+    'normal',
+    'high',
+    'critical'
+);
+
+
+ALTER TYPE public.notification_priority OWNER TO rahman;
+
+--
+-- Name: notification_status; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.notification_status AS ENUM (
+    'pending',
+    'sent',
+    'failed',
+    'cancelled'
+);
+
+
+ALTER TYPE public.notification_status OWNER TO rahman;
+
+--
+-- Name: proxy_status; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.proxy_status AS ENUM (
+    'healthy',
+    'unhealthy',
+    'untested',
+    'suspended',
+    'disabled'
+);
+
+
+ALTER TYPE public.proxy_status OWNER TO rahman;
+
+--
+-- Name: proxy_type; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.proxy_type AS ENUM (
+    'http',
+    'https',
+    'socks5'
+);
+
+
+ALTER TYPE public.proxy_type OWNER TO rahman;
+
+--
+-- Name: recipient_status; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.recipient_status AS ENUM (
+    'pending',
+    'sent',
+    'failed',
+    'bounced',
+    'skipped',
+    'unsubscribed'
+);
+
+
+ALTER TYPE public.recipient_status OWNER TO rahman;
+
+--
+-- Name: rotation_strategy; Type: TYPE; Schema: public; Owner: rahman
+--
+
+CREATE TYPE public.rotation_strategy AS ENUM (
+    'round_robin',
+    'random',
+    'weighted',
+    'health_based',
+    'least_used',
+    'time_based'
+);
+
+
+ALTER TYPE public.rotation_strategy OWNER TO rahman;
+
+--
+-- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: rahman
+--
+
+CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_updated_at_column() OWNER TO rahman;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: account_delivery_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.account_delivery_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    account_id uuid NOT NULL,
+    provider character varying(50) DEFAULT ''::character varying NOT NULL,
+    sent boolean DEFAULT false NOT NULL,
+    delivered boolean DEFAULT false NOT NULL,
+    failed boolean DEFAULT false NOT NULL,
+    hard_bounced boolean DEFAULT false NOT NULL,
+    soft_bounced boolean DEFAULT false NOT NULL,
+    complaint boolean DEFAULT false NOT NULL,
+    unsubscribed boolean DEFAULT false NOT NULL,
+    spam_score numeric(5,2) DEFAULT 0.00 NOT NULL,
+    health_score numeric(3,2) DEFAULT 1.00 NOT NULL,
+    latency_ms numeric(10,2) DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.account_delivery_stats OWNER TO rahman;
+
+--
+-- Name: accounts; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.accounts (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    email character varying(255) NOT NULL,
+    name character varying(255),
+    provider text NOT NULL,
+    status public.account_status DEFAULT 'active'::public.account_status NOT NULL,
+    smtp_host character varying(255) DEFAULT ''::character varying,
+    smtp_port integer DEFAULT 587,
+    smtp_username character varying(255) DEFAULT ''::character varying,
+    smtp_password text,
+    oauth_token text DEFAULT ''::text,
+    oauth_refresh_token text DEFAULT ''::text,
+    oauth_client_id text,
+    oauth_client_secret text,
+    credentials_encrypted text,
+    encryption_key_id character varying(100),
+    daily_limit integer DEFAULT 500,
+    rotation_limit integer DEFAULT 50,
+    hourly_limit integer DEFAULT 50,
+    sent_today integer DEFAULT 0,
+    sent_this_hour integer DEFAULT 0,
+    total_sent integer DEFAULT 0,
+    total_failed integer DEFAULT 0,
+    consecutive_failures integer DEFAULT 0,
+    last_failure_at timestamp without time zone,
+    last_success_at timestamp without time zone,
+    last_used_at timestamp without time zone,
+    health_score numeric(3,2) DEFAULT 1.00,
+    spam_score numeric(3,2) DEFAULT 0.00,
+    suspended_at timestamp without time zone,
+    suspended_until timestamp without time zone,
+    suspension_reason text DEFAULT ''::text,
+    cooldown_until timestamp without time zone,
+    weight integer DEFAULT 1,
+    priority integer DEFAULT 0,
+    use_proxy boolean DEFAULT false,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone,
+    proxy_id uuid,
+    proxy_rotation_enabled boolean DEFAULT false,
+    is_suspended boolean DEFAULT false,
+    last_health_check timestamp without time zone,
+    rotation_sent integer DEFAULT 0,
+    last_reset timestamp without time zone DEFAULT now(),
+    encrypted_password text DEFAULT ''::text,
+    smtp_use_tls boolean DEFAULT true,
+    smtp_use_ssl boolean DEFAULT false,
+    oauth_expiry timestamp without time zone,
+    success_rate numeric(5,2) DEFAULT 100.0,
+    is_active boolean DEFAULT true,
+    last_error_message text DEFAULT ''::text
+);
+
+
+ALTER TABLE public.accounts OWNER TO rahman;
+
+--
+-- Name: account_limits; Type: VIEW; Schema: public; Owner: rahman
+--
+
+CREATE VIEW public.account_limits AS
+ SELECT id AS account_id,
+    daily_limit,
+    GREATEST((daily_limit - sent_today), 0) AS remaining_daily
+   FROM public.accounts;
+
+
+ALTER VIEW public.account_limits OWNER TO rahman;
+
+--
+-- Name: account_proxy_mapping; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.account_proxy_mapping (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    account_id uuid NOT NULL,
+    proxy_id uuid NOT NULL,
+    is_active boolean DEFAULT true,
+    is_preferred boolean DEFAULT false,
+    assigned_at timestamp without time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp without time zone,
+    usage_count integer DEFAULT 0,
+    success_count integer DEFAULT 0,
+    failure_count integer DEFAULT 0,
+    notes text,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.account_proxy_mapping OWNER TO rahman;
+
+--
+-- Name: account_rotation_metrics; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.account_rotation_metrics (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    account_id uuid NOT NULL,
+    campaign_id uuid,
+    rotation_index integer DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.account_rotation_metrics OWNER TO rahman;
+
+--
+-- Name: account_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.account_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    account_id uuid NOT NULL,
+    date date DEFAULT CURRENT_DATE NOT NULL,
+    hour integer,
+    sent_count integer DEFAULT 0,
+    failed_count integer DEFAULT 0,
+    bounced_count integer DEFAULT 0,
+    success_rate numeric(5,2) DEFAULT 0.00,
+    avg_response_time_ms numeric(10,2) DEFAULT 0.00,
+    consecutive_failures integer DEFAULT 0,
+    health_score numeric(3,2) DEFAULT 1.00,
+    spam_score numeric(3,2) DEFAULT 0.00,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.account_stats OWNER TO rahman;
+
+--
+-- Name: api_keys; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.api_keys (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    key_name character varying(255) NOT NULL,
+    api_key character varying(255) NOT NULL,
+    api_secret character varying(255),
+    key_hash character varying(64) NOT NULL,
+    permissions jsonb DEFAULT '[]'::jsonb,
+    rate_limit integer DEFAULT 100,
+    rate_limit_window integer DEFAULT 60,
+    is_active boolean DEFAULT true,
+    last_used_at timestamp without time zone,
+    usage_count integer DEFAULT 0,
+    expires_at timestamp without time zone,
+    created_by character varying(100),
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone
+);
+
+
+ALTER TABLE public.api_keys OWNER TO rahman;
+
+--
+-- Name: attachment_rotation_state; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.attachment_rotation_state (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    format_rotation_enabled boolean DEFAULT false,
+    formats jsonb DEFAULT '["pdf", "jpg", "png", "webp"]'::jsonb,
+    current_format_index integer DEFAULT 0,
+    total_formats integer DEFAULT 0,
+    attachment_template_ids uuid[] DEFAULT '{}'::uuid[],
+    current_template_index integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    last_used_format character varying(50),
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.attachment_rotation_state OWNER TO rahman;
+
+--
+-- Name: attachments; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.attachments (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid,
+    template_id uuid,
+    filename character varying(255) NOT NULL,
+    original_filename character varying(255),
+    file_path text NOT NULL,
+    file_size bigint NOT NULL,
+    file_hash character varying(64),
+    mime_type character varying(100),
+    file_format character varying(50),
+    is_inline boolean DEFAULT false,
+    content_id character varying(255),
+    converted_from character varying(50),
+    conversion_backend character varying(50),
+    cache_key character varying(255),
+    cached_at timestamp without time zone,
+    cache_hit_count integer DEFAULT 0,
+    usage_count integer DEFAULT 0,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone
+);
+
+
+ALTER TABLE public.attachments OWNER TO rahman;
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    entity_type character varying(100) NOT NULL,
+    entity_id uuid,
+    action character varying(100) NOT NULL,
+    actor character varying(255),
+    actor_ip inet,
+    changes jsonb,
+    old_values jsonb,
+    new_values jsonb,
+    success boolean DEFAULT true,
+    error_message text,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.audit_logs OWNER TO rahman;
+
+--
+-- Name: campaign_delivery_metrics; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.campaign_delivery_metrics (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    account_id uuid,
+    latency_ms numeric(10,2) DEFAULT 0 NOT NULL,
+    sent_per_minute numeric(10,2) DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.campaign_delivery_metrics OWNER TO rahman;
+
+--
+-- Name: campaign_recipient_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.campaign_recipient_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    recipient_id uuid,
+    recipient_email character varying(255) DEFAULT ''::character varying NOT NULL,
+    "time" timestamp without time zone DEFAULT now() NOT NULL,
+    sent boolean DEFAULT false NOT NULL,
+    delivered boolean DEFAULT false NOT NULL,
+    failed boolean DEFAULT false NOT NULL,
+    hard_bounced boolean DEFAULT false NOT NULL,
+    soft_bounced boolean DEFAULT false NOT NULL,
+    complaint boolean DEFAULT false NOT NULL,
+    unsubscribed boolean DEFAULT false NOT NULL,
+    opens integer DEFAULT 0 NOT NULL,
+    unique_opens integer DEFAULT 0 NOT NULL,
+    clicks integer DEFAULT 0 NOT NULL,
+    unique_clicks integer DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.campaign_recipient_stats OWNER TO rahman;
+
+--
+-- Name: campaign_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.campaign_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    snapshot_at timestamp without time zone DEFAULT now() NOT NULL,
+    total_recipients integer DEFAULT 0,
+    sent_count integer DEFAULT 0,
+    failed_count integer DEFAULT 0,
+    pending_count integer DEFAULT 0,
+    bounced_count integer DEFAULT 0,
+    success_rate numeric(5,2) DEFAULT 0.00,
+    failure_rate numeric(5,2) DEFAULT 0.00,
+    emails_per_minute numeric(10,2) DEFAULT 0.00,
+    emails_per_hour numeric(10,2) DEFAULT 0.00,
+    avg_send_time_ms numeric(10,2) DEFAULT 0.00,
+    active_accounts integer DEFAULT 0,
+    suspended_accounts integer DEFAULT 0,
+    elapsed_time_seconds integer DEFAULT 0,
+    estimated_time_remaining_seconds integer,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.campaign_stats OWNER TO rahman;
+
+--
+-- Name: campaigns; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.campaigns (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    status text DEFAULT 'created'::public.campaign_status NOT NULL,
+    session_id character varying(100),
+    total_recipients integer DEFAULT 0,
+    sent_count integer DEFAULT 0,
+    failed_count integer DEFAULT 0,
+    pending_count integer DEFAULT 0,
+    progress numeric(5,2) DEFAULT 0.00,
+    starttime timestamp without time zone,
+    endtime timestamp without time zone,
+    scheduled_at timestamp without time zone,
+    paused_at timestamp without time zone,
+    resumed_at timestamp without time zone,
+    worker_count integer DEFAULT 1,
+    batch_size integer DEFAULT 100,
+    rate_limit integer DEFAULT 10,
+    subject_template text,
+    sender_name character varying(255),
+    reply_to character varying(255),
+    use_templates boolean DEFAULT true,
+    use_attachments boolean DEFAULT false,
+    use_personalization boolean DEFAULT true,
+    rotation_strategy text DEFAULT 'round_robin'::public.rotation_strategy,
+    error_message text,
+    last_error_at timestamp without time zone,
+    retry_count integer DEFAULT 0,
+    max_retries integer DEFAULT 3,
+    config jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_by character varying(100),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone,
+    sender_name_rotation_enabled boolean DEFAULT false,
+    subject_rotation_enabled boolean DEFAULT false,
+    template_rotation_enabled boolean DEFAULT false,
+    attachment_rotation_enabled boolean DEFAULT false,
+    custom_field_rotation_enabled boolean DEFAULT false,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    state character varying(50) DEFAULT 'idle'::character varying,
+    priority integer DEFAULT 0,
+    failed_at timestamp without time zone,
+    success_rate numeric(5,2) DEFAULT 0.00,
+    throughput numeric(10,2) DEFAULT 0.00,
+    estimated_eta timestamp without time zone,
+    template_ids uuid[] DEFAULT '{}'::uuid[],
+    account_ids uuid[] DEFAULT '{}'::uuid[],
+    recipient_list_id uuid,
+    proxy_ids uuid[] DEFAULT '{}'::uuid[],
+    tags text[] DEFAULT '{}'::text[],
+    last_checkpoint timestamp without time zone,
+    checkpoint_data jsonb DEFAULT '{}'::jsonb,
+    updated_by character varying(100) DEFAULT ''::character varying,
+    is_archived boolean DEFAULT false,
+    archived_at timestamp without time zone
+);
+
+
+ALTER TABLE public.campaigns OWNER TO rahman;
+
+--
+-- Name: config_history; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.config_history (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    config_id uuid,
+    section character varying(100) NOT NULL,
+    key character varying(255) NOT NULL,
+    old_value text,
+    new_value text,
+    changed_by character varying(100),
+    change_reason text,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.config_history OWNER TO rahman;
+
+--
+-- Name: configs; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.configs (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    section character varying(100) NOT NULL,
+    key character varying(255) NOT NULL,
+    value text DEFAULT ''::text NOT NULL,
+    type character varying(50) DEFAULT 'string'::character varying NOT NULL,
+    default_value text DEFAULT ''::text,
+    description text,
+    validation text,
+    is_encrypted boolean DEFAULT false,
+    is_sensitive boolean DEFAULT false,
+    is_readonly boolean DEFAULT false,
+    tags text[] DEFAULT '{}'::text[],
+    metadata jsonb DEFAULT '{}'::jsonb,
+    version integer DEFAULT 1,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(100) DEFAULT ''::character varying
+);
+
+
+ALTER TABLE public.configs OWNER TO rahman;
+
+--
+-- Name: custom_field_rotation; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.custom_field_rotation (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    field_name character varying(255) NOT NULL,
+    rotation_strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    field_values jsonb DEFAULT '[]'::jsonb,
+    current_index integer DEFAULT 0,
+    total_values integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    weights jsonb DEFAULT '{}'::jsonb,
+    time_based_rules jsonb DEFAULT '{}'::jsonb,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    last_used_value text,
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.custom_field_rotation OWNER TO rahman;
+
+--
+-- Name: delivery_time_series; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.delivery_time_series (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid,
+    account_id uuid,
+    sent boolean DEFAULT false NOT NULL,
+    delivered boolean DEFAULT false NOT NULL,
+    failed boolean DEFAULT false NOT NULL,
+    hard_bounced boolean DEFAULT false NOT NULL,
+    soft_bounced boolean DEFAULT false NOT NULL,
+    complaint boolean DEFAULT false NOT NULL,
+    unsubscribed boolean DEFAULT false NOT NULL,
+    opens integer DEFAULT 0 NOT NULL,
+    clicks integer DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.delivery_time_series OWNER TO rahman;
+
+--
+-- Name: email_logs; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.email_logs (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    recipient_id uuid,
+    account_id uuid,
+    recipient_email character varying(255) NOT NULL,
+    sender_email character varying(255),
+    subject character varying(500),
+    status character varying(50) NOT NULL,
+    message_id character varying(255),
+    sent_at timestamp without time zone,
+    delivered_at timestamp without time zone,
+    failed_at timestamp without time zone,
+    bounced_at timestamp without time zone,
+    error_message text,
+    error_code character varying(50),
+    error_type character varying(50),
+    smtp_response text,
+    http_status_code integer,
+    retry_attempt integer DEFAULT 0,
+    send_duration_ms integer,
+    template_used uuid,
+    personalization_data jsonb,
+    has_attachments boolean DEFAULT false,
+    attachment_count integer DEFAULT 0,
+    proxy_used character varying(255),
+    log_level public.log_level DEFAULT 'info'::public.log_level,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    indexed_at timestamp without time zone DEFAULT now(),
+    proxy_id uuid,
+    proxy_host character varying(255),
+    proxy_port integer
+);
+
+
+ALTER TABLE public.email_logs OWNER TO rahman;
+
+--
+-- Name: logs; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.logs (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "time" timestamp without time zone DEFAULT now() NOT NULL,
+    level character varying(20) DEFAULT 'info'::character varying NOT NULL,
+    category character varying(50),
+    sessionid character varying(100),
+    campaignid character varying(100),
+    accountid character varying(100),
+    recipientid character varying(100),
+    proxyid character varying(100),
+    templateid character varying(100),
+    message text NOT NULL,
+    details jsonb DEFAULT '{}'::jsonb,
+    errorcode character varying(50),
+    errorclass character varying(100),
+    stacktrace text,
+    requestid character varying(100),
+    traceid character varying(100),
+    spanid character varying(100),
+    httpmethod character varying(10),
+    httppath text,
+    httpstatus integer,
+    durationms bigint,
+    clientip character varying(45),
+    useragent text,
+    nodeid character varying(100),
+    hostname character varying(255),
+    environment character varying(50),
+    shard character varying(50),
+    metricname character varying(255),
+    metricvalue double precision,
+    metricunit character varying(50),
+    metriclabels jsonb DEFAULT '{}'::jsonb,
+    userid character varying(100),
+    username character varying(255),
+    tenantid character varying(100),
+    source character varying(100),
+    subsystem character varying(100),
+    component character varying(100),
+    version character varying(50),
+    correlationid character varying(100),
+    archived boolean DEFAULT false,
+    createdat timestamp without time zone DEFAULT now() CONSTRAINT logs_created_at_not_null NOT NULL
+);
+
+
+ALTER TABLE public.logs OWNER TO rahman;
+
+--
+-- Name: notification_history; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.notification_history (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    event_type public.notification_event NOT NULL,
+    channel public.notification_channel DEFAULT 'telegram'::public.notification_channel NOT NULL,
+    priority public.notification_priority DEFAULT 'normal'::public.notification_priority,
+    title character varying(500),
+    message text NOT NULL,
+    chat_id character varying(255),
+    campaign_id uuid,
+    account_id uuid,
+    status public.notification_status DEFAULT 'sent'::public.notification_status NOT NULL,
+    sent_at timestamp without time zone,
+    delivered_at timestamp without time zone,
+    failed_at timestamp without time zone,
+    retry_count integer DEFAULT 0,
+    error_message text,
+    error_code character varying(50),
+    message_id character varying(255),
+    response_data jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notification_history OWNER TO rahman;
+
+--
+-- Name: notification_queue; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.notification_queue (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    event_type public.notification_event NOT NULL,
+    channel public.notification_channel DEFAULT 'telegram'::public.notification_channel NOT NULL,
+    priority public.notification_priority DEFAULT 'normal'::public.notification_priority,
+    title character varying(500),
+    message text NOT NULL,
+    chat_ids text[] DEFAULT '{}'::text[],
+    campaign_id uuid,
+    account_id uuid,
+    retry_count integer DEFAULT 0,
+    max_retries integer DEFAULT 3,
+    scheduled_at timestamp without time zone DEFAULT now() NOT NULL,
+    next_retry_at timestamp without time zone,
+    status public.notification_status DEFAULT 'pending'::public.notification_status NOT NULL,
+    error_message text,
+    payload jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notification_queue OWNER TO rahman;
+
+--
+-- Name: notification_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.notification_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    date date DEFAULT CURRENT_DATE NOT NULL,
+    hour integer,
+    event_type public.notification_event,
+    channel public.notification_channel DEFAULT 'telegram'::public.notification_channel,
+    total_sent integer DEFAULT 0,
+    total_failed integer DEFAULT 0,
+    total_pending integer DEFAULT 0,
+    success_rate numeric(5,2) DEFAULT 0.00,
+    avg_delivery_time_ms numeric(10,2) DEFAULT 0.00,
+    by_priority jsonb DEFAULT '{}'::jsonb,
+    by_event jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_stats_hour_check CHECK (((hour >= 0) AND (hour <= 23)))
+);
+
+
+ALTER TABLE public.notification_stats OWNER TO rahman;
+
+--
+-- Name: notification_subscriptions; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.notification_subscriptions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    event_type public.notification_event NOT NULL,
+    channel public.notification_channel DEFAULT 'telegram'::public.notification_channel NOT NULL,
+    is_enabled boolean DEFAULT true,
+    chat_ids text[] DEFAULT '{}'::text[],
+    priority public.notification_priority DEFAULT 'normal'::public.notification_priority,
+    throttle_enabled boolean DEFAULT false,
+    throttle_minutes integer DEFAULT 5,
+    quiet_hours_enabled boolean DEFAULT false,
+    quiet_hours_start time without time zone,
+    quiet_hours_end time without time zone,
+    filters jsonb DEFAULT '{}'::jsonb,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notification_subscriptions OWNER TO rahman;
+
+--
+-- Name: notification_templates; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.notification_templates (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    template_name character varying(255) NOT NULL,
+    template_key character varying(100) NOT NULL,
+    event_type public.notification_event NOT NULL,
+    channel public.notification_channel DEFAULT 'telegram'::public.notification_channel NOT NULL,
+    title character varying(500),
+    message_template text NOT NULL,
+    format character varying(50) DEFAULT 'markdown'::character varying,
+    variables jsonb DEFAULT '[]'::jsonb,
+    priority public.notification_priority DEFAULT 'normal'::public.notification_priority,
+    is_enabled boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notification_templates OWNER TO rahman;
+
+--
+-- Name: proxies; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.proxies (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    name character varying(255),
+    type text DEFAULT 'http'::public.proxy_type CONSTRAINT proxies_proxy_type_not_null NOT NULL,
+    status text DEFAULT 'untested'::public.proxy_status NOT NULL,
+    host character varying(255) NOT NULL,
+    port integer NOT NULL,
+    username character varying(255),
+    password text,
+    proxy_url text NOT NULL,
+    is_authenticated boolean DEFAULT false,
+    health_score numeric(3,2) DEFAULT 1.00,
+    last_checked_at timestamp without time zone,
+    last_used_at timestamp without time zone,
+    last_healthy_at timestamp without time zone,
+    last_error_at timestamp without time zone,
+    total_requests integer DEFAULT 0,
+    success_count integer DEFAULT 0,
+    failure_count integer DEFAULT 0,
+    consecutive_fails integer DEFAULT 0,
+    max_consecutive integer DEFAULT 5,
+    latency_ms numeric(10,2) DEFAULT 0.00,
+    min_latency_ms numeric(10,2),
+    max_latency_ms numeric(10,2),
+    response_times jsonb DEFAULT '[]'::jsonb,
+    is_anonymous boolean DEFAULT false,
+    anonymity_verified_at timestamp without time zone,
+    country character varying(100),
+    city character varying(100),
+    isp character varying(255),
+    location_checked_at timestamp without time zone,
+    weight integer DEFAULT 1,
+    priority integer DEFAULT 0,
+    suspended_at timestamp without time zone,
+    suspended_until timestamp without time zone,
+    suspension_reason text,
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone,
+    region character varying(100),
+    provider character varying(100),
+    in_use boolean DEFAULT false,
+    assigned_accounts integer DEFAULT 0,
+    max_accounts integer DEFAULT 0,
+    rotation_group character varying(255),
+    max_connections integer DEFAULT 0,
+    current_conns integer DEFAULT 0,
+    bandwidth_mb double precision DEFAULT 0,
+    bandwidth_limit_mb double precision DEFAULT 0,
+    last_error text,
+    tags text[],
+    rotation_weight integer DEFAULT 1,
+    lasthealthyat timestamp with time zone,
+    reset_at timestamp with time zone,
+    created_by character varying(100),
+    updated_by character varying(100),
+    CONSTRAINT proxies_port_check CHECK (((port > 0) AND (port <= 65535)))
+);
+
+
+ALTER TABLE public.proxies OWNER TO rahman;
+
+--
+-- Name: proxy_health_checks; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.proxy_health_checks (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    proxy_id uuid NOT NULL,
+    check_time timestamp without time zone DEFAULT now() NOT NULL,
+    success boolean DEFAULT false NOT NULL,
+    latency_ms numeric(10,2),
+    status_code integer,
+    error_message text,
+    error_type character varying(100),
+    test_url character varying(500),
+    test_target character varying(255),
+    anonymity_test boolean DEFAULT false,
+    is_anonymous boolean,
+    location_detected boolean DEFAULT false,
+    detected_country character varying(100),
+    detected_city character varying(100),
+    connection_time_ms numeric(10,2),
+    response_time_ms numeric(10,2),
+    health_score_after numeric(3,2),
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.proxy_health_checks OWNER TO rahman;
+
+--
+-- Name: proxy_rotation_config; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.proxy_rotation_config (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    config_name character varying(255) NOT NULL,
+    strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    enabled boolean DEFAULT true,
+    min_health_score numeric(3,2) DEFAULT 0.50,
+    max_failures_allowed integer DEFAULT 5,
+    sticky_sessions boolean DEFAULT false,
+    session_timeout_minutes integer DEFAULT 30,
+    health_check_enabled boolean DEFAULT true,
+    health_check_interval_minutes integer DEFAULT 5,
+    auto_disable_failed boolean DEFAULT true,
+    auto_enable_recovered boolean DEFAULT true,
+    load_balancing_enabled boolean DEFAULT false,
+    max_concurrent_per_proxy integer DEFAULT 100,
+    proxy_pool jsonb DEFAULT '[]'::jsonb,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.proxy_rotation_config OWNER TO rahman;
+
+--
+-- Name: proxy_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.proxy_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    proxy_id uuid NOT NULL,
+    date date DEFAULT CURRENT_DATE NOT NULL,
+    hour integer,
+    total_requests integer DEFAULT 0,
+    successful_requests integer DEFAULT 0,
+    failed_requests integer DEFAULT 0,
+    success_rate numeric(5,2) DEFAULT 0.00,
+    avg_latency_ms numeric(10,2) DEFAULT 0.00,
+    min_latency_ms numeric(10,2),
+    max_latency_ms numeric(10,2),
+    total_bytes_sent bigint DEFAULT 0,
+    total_bytes_received bigint DEFAULT 0,
+    active_connections integer DEFAULT 0,
+    max_concurrent_connections integer DEFAULT 0,
+    health_score numeric(3,2) DEFAULT 1.00,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT proxy_stats_hour_check CHECK (((hour >= 0) AND (hour <= 23)))
+);
+
+
+ALTER TABLE public.proxy_stats OWNER TO rahman;
+
+--
+-- Name: recipients; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.recipients (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    list_id uuid CONSTRAINT recipients_campaign_id_not_null NOT NULL,
+    email character varying(255) NOT NULL,
+    name character varying(255),
+    first_name character varying(100),
+    last_name character varying(100),
+    status text DEFAULT 'pending'::public.recipient_status NOT NULL,
+    custom_fields jsonb DEFAULT '{}'::jsonb,
+    sent_at timestamp without time zone,
+    failed_at timestamp without time zone,
+    bounced_at timestamp without time zone,
+    account_id uuid,
+    template_id uuid,
+    retry_count integer DEFAULT 0,
+    max_retries integer DEFAULT 3,
+    error_message text,
+    error_code character varying(50),
+    message_id character varying(255),
+    opened_at timestamp without time zone,
+    clicked_at timestamp without time zone,
+    unsubscribed_at timestamp without time zone,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    sender_used character varying(255),
+    subject_used text,
+    custom_fields_used jsonb DEFAULT '{}'::jsonb,
+    sent boolean DEFAULT false NOT NULL,
+    failed boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE public.recipients OWNER TO rahman;
+
+--
+-- Name: rotation_history; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.rotation_history (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_type character varying(100) NOT NULL,
+    rotated_at timestamp without time zone DEFAULT now() NOT NULL,
+    previous_value text,
+    current_value text,
+    previous_index integer,
+    current_index integer,
+    strategy_used public.rotation_strategy,
+    recipient_id uuid,
+    recipient_email character varying(255),
+    rotation_reason character varying(255),
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.rotation_history OWNER TO rahman;
+
+--
+-- Name: rotation_performance_stats; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.rotation_performance_stats (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_type character varying(100) NOT NULL,
+    date date DEFAULT CURRENT_DATE NOT NULL,
+    hour integer,
+    total_rotations integer DEFAULT 0,
+    items_used jsonb DEFAULT '{}'::jsonb,
+    strategy_used public.rotation_strategy,
+    avg_rotation_time_ms numeric(10,2) DEFAULT 0.00,
+    success_count integer DEFAULT 0,
+    failure_count integer DEFAULT 0,
+    performance_data jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rotation_performance_stats_hour_check CHECK (((hour >= 0) AND (hour <= 23)))
+);
+
+
+ALTER TABLE public.rotation_performance_stats OWNER TO rahman;
+
+--
+-- Name: rotation_tracking; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.rotation_tracking (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_type character varying(50) NOT NULL,
+    current_index integer DEFAULT 0,
+    total_items integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    items jsonb DEFAULT '[]'::jsonb,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    settings jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.rotation_tracking OWNER TO rahman;
+
+--
+-- Name: sender_name_rotation; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.sender_name_rotation (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    sender_names jsonb DEFAULT '[]'::jsonb,
+    current_index integer DEFAULT 0,
+    total_names integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    weights jsonb DEFAULT '{}'::jsonb,
+    time_based_rules jsonb DEFAULT '{}'::jsonb,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    last_used_name character varying(255),
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.sender_name_rotation OWNER TO rahman;
+
+--
+-- Name: sessions; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.sessions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    session_id character varying(100) NOT NULL,
+    session_name character varying(255),
+    campaign_ids uuid[] DEFAULT '{}'::uuid[],
+    status character varying(50) DEFAULT 'active'::character varying,
+    started_at timestamp without time zone DEFAULT now() NOT NULL,
+    ended_at timestamp without time zone,
+    expires_at timestamp without time zone,
+    total_campaigns integer DEFAULT 0,
+    active_campaigns integer DEFAULT 0,
+    state_data jsonb DEFAULT '{}'::jsonb,
+    created_by character varying(100),
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.sessions OWNER TO rahman;
+
+--
+-- Name: subject_rotation; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.subject_rotation (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    subject_lines jsonb DEFAULT '[]'::jsonb,
+    current_index integer DEFAULT 0,
+    total_subjects integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    weights jsonb DEFAULT '{}'::jsonb,
+    time_based_rules jsonb DEFAULT '{}'::jsonb,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    last_used_subject text,
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.subject_rotation OWNER TO rahman;
+
+--
+-- Name: system_config; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.system_config (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    config_key character varying(255) NOT NULL,
+    config_value text NOT NULL,
+    config_type character varying(50) DEFAULT 'string'::character varying,
+    category character varying(100),
+    description text,
+    is_encrypted boolean DEFAULT false,
+    is_sensitive boolean DEFAULT false,
+    validation_rule text,
+    default_value text,
+    is_active boolean DEFAULT true,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.system_config OWNER TO rahman;
+
+--
+-- Name: telegram_config; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.telegram_config (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    bot_token text NOT NULL,
+    bot_username character varying(255),
+    chat_ids text[] DEFAULT '{}'::text[],
+    is_enabled boolean DEFAULT true,
+    parse_mode character varying(50) DEFAULT 'Markdown'::character varying,
+    disable_notification boolean DEFAULT false,
+    disable_web_page_preview boolean DEFAULT true,
+    retry_enabled boolean DEFAULT true,
+    max_retries integer DEFAULT 3,
+    retry_delay_seconds integer DEFAULT 5,
+    rate_limit_messages integer DEFAULT 30,
+    rate_limit_window_seconds integer DEFAULT 60,
+    last_test_at timestamp without time zone,
+    test_success boolean,
+    test_error text,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.telegram_config OWNER TO rahman;
+
+--
+-- Name: template_rotation_state; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.template_rotation_state (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    campaign_id uuid NOT NULL,
+    rotation_strategy public.rotation_strategy DEFAULT 'round_robin'::public.rotation_strategy,
+    template_ids uuid[] DEFAULT '{}'::uuid[],
+    current_index integer DEFAULT 0,
+    total_templates integer DEFAULT 0,
+    rotation_count integer DEFAULT 0,
+    weights jsonb DEFAULT '{}'::jsonb,
+    usage_stats jsonb DEFAULT '{}'::jsonb,
+    last_rotated_at timestamp without time zone,
+    last_used_template_id uuid,
+    is_active boolean DEFAULT true,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.template_rotation_state OWNER TO rahman;
+
+--
+-- Name: templates; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.templates (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    subject character varying(500),
+    content text NOT NULL,
+    plain_text text DEFAULT ''::text,
+    template_type character varying(50) DEFAULT 'html'::character varying,
+    category character varying(100),
+    variables jsonb DEFAULT '[]'::jsonb,
+    spam_score numeric(5,2) DEFAULT 0.00,
+    spam_check_result jsonb,
+    spam_checked_at timestamp without time zone,
+    version integer DEFAULT 1,
+    parent_template_id uuid,
+    is_active boolean DEFAULT true,
+    is_default boolean DEFAULT false,
+    usage_count integer DEFAULT 0,
+    last_used_at timestamp without time zone,
+    settings jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_by character varying(100),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp without time zone,
+    is_archived boolean DEFAULT false,
+    html_content text DEFAULT ''::text,
+    slug character varying(255) DEFAULT ''::character varying,
+    language character varying(50) DEFAULT 'en'::character varying,
+    type character varying(50) DEFAULT 'html'::character varying,
+    from_name character varying(255) DEFAULT ''::character varying,
+    from_email character varying(255) DEFAULT ''::character varying,
+    reply_to character varying(255) DEFAULT ''::character varying,
+    text_content text DEFAULT ''::text,
+    preheader character varying(500) DEFAULT ''::character varying,
+    custom_headers jsonb DEFAULT '{}'::jsonb,
+    attachments text[] DEFAULT '{}'::text[],
+    tags text[] DEFAULT '{}'::text[],
+    spam_details jsonb DEFAULT '{}'::jsonb,
+    last_spam_check_at timestamp without time zone,
+    render_count bigint DEFAULT 0,
+    last_rendered_at timestamp without time zone,
+    failure_count bigint DEFAULT 0,
+    last_failure_at timestamp without time zone,
+    last_failure_msg text DEFAULT ''::text,
+    engine character varying(50) DEFAULT 'go'::character varying,
+    rendering_config jsonb DEFAULT '{}'::jsonb,
+    rotation_group character varying(255) DEFAULT ''::character varying,
+    rotation_weight integer DEFAULT 1,
+    rotation_index integer DEFAULT 0,
+    archived_at timestamp without time zone,
+    updated_by character varying(100) DEFAULT ''::character varying,
+    success_rate numeric(5,2) DEFAULT 0.00
+);
+
+
+ALTER TABLE public.templates OWNER TO rahman;
+
+--
+-- Name: unsubscribe_requests; Type: TABLE; Schema: public; Owner: rahman
+--
+
+CREATE TABLE public.unsubscribe_requests (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    email character varying(255) NOT NULL,
+    campaign_id uuid,
+    unsubscribe_token character varying(255) NOT NULL,
+    unsubscribed_at timestamp without time zone DEFAULT now() NOT NULL,
+    ip_address inet,
+    user_agent text,
+    reason text,
+    verified boolean DEFAULT false,
+    verified_at timestamp without time zone,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.unsubscribe_requests OWNER TO rahman;
+
+--
+-- Data for Name: account_delivery_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.account_delivery_stats (id, account_id, provider, sent, delivered, failed, hard_bounced, soft_bounced, complaint, unsubscribed, spam_score, health_score, latency_ms, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: account_proxy_mapping; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.account_proxy_mapping (id, account_id, proxy_id, is_active, is_preferred, assigned_at, last_used_at, usage_count, success_count, failure_count, notes, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: account_rotation_metrics; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.account_rotation_metrics (id, account_id, campaign_id, rotation_index, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: account_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.account_stats (id, account_id, date, hour, sent_count, failed_count, bounced_count, success_rate, avg_response_time_ms, consecutive_failures, health_score, spam_score, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: accounts; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.accounts (id, email, name, provider, status, smtp_host, smtp_port, smtp_username, smtp_password, oauth_token, oauth_refresh_token, oauth_client_id, oauth_client_secret, credentials_encrypted, encryption_key_id, daily_limit, rotation_limit, hourly_limit, sent_today, sent_this_hour, total_sent, total_failed, consecutive_failures, last_failure_at, last_success_at, last_used_at, health_score, spam_score, suspended_at, suspended_until, suspension_reason, cooldown_until, weight, priority, use_proxy, settings, metadata, created_at, updated_at, deleted_at, proxy_id, proxy_rotation_enabled, is_suspended, last_health_check, rotation_sent, last_reset, encrypted_password, smtp_use_tls, smtp_use_ssl, oauth_expiry, success_rate, is_active, last_error_message) FROM stdin;
+0d54c6d8-828b-4247-b62c-a93b14d5b5bd	test@gmail.com	Test Sender	gmail	active	smtp.gmail.com	587		\N			\N	\N	\N	\N	100	50	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-23 02:29:39.055391	2026-02-23 02:29:39.055391	\N	\N	f	f	\N	0	2026-02-23 02:29:39.058198	testpass123	t	f	\N	100.00	t	
+b8e2a6a7-41db-4fe0-b33a-dd25af671f6d	test2@gmail.com	Test Sender	gmail	active	smtp.gmail.com	587		\N			\N	\N	\N	\N	100	50	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-24 03:46:01.323936	2026-02-24 03:46:01.323936	\N	\N	f	f	\N	0	2026-02-24 03:46:01.358982	testpass123	t	f	\N	100.00	t	
+317c56c6-3708-4534-b76a-e71e1ca14d6f	backup@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-26 05:17:19.893686	2026-02-26 05:17:19.893687	\N	\N	f	f	\N	0	2026-02-26 05:17:19.89899	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+1dd7fa47-063f-4535-a763-800d97be1eca	backup1@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-26 12:10:03.910836	2026-02-26 12:10:03.910836	\N	\N	f	f	\N	0	2026-02-26 12:10:03.911629	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+697edf16-5337-495f-ba48-8da13d3793d5	backup9@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-28 14:19:39.460995	2026-02-28 14:19:39.460995	\N	\N	f	f	\N	0	2026-02-28 14:19:39.461805	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+b7bb34d8-c547-4d9e-a17c-bd461311482f	backup90@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-28 14:50:20.389424	2026-02-28 14:50:20.389424	\N	\N	f	f	\N	0	2026-02-28 14:50:20.422753	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+37a8cf98-0df1-495e-81c3-b88416523f43	backup99@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-28 14:58:30.95435	2026-02-28 14:58:30.95435	\N	\N	f	f	\N	0	2026-02-28 14:58:30.991735	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+ca6a4424-6104-4919-8332-4ff8c490a27b	backup11@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-02-28 14:59:22.065911	2026-02-28 14:59:22.065911	\N	\N	f	f	\N	0	2026-02-28 14:59:22.066672	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+63c4bf94-376f-4c91-98f1-b74dc6dfc37b	back2up11@cloudman.one	Cloudman Backup	workspace	active	cloudman.one	587		\N			\N	\N	\N	\N	500	100	50	0	0	0	0	0	\N	\N	\N	1.00	0.00	\N	\N		\N	0	0	f	null	null	2026-03-01 22:20:08.296888	2026-03-01 22:20:08.296888	\N	\N	f	f	\N	0	2026-03-01 22:20:08.326948	sCi!@^5Bs*qvnkm7	t	f	\N	100.00	t	
+\.
+
+
+--
+-- Data for Name: api_keys; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.api_keys (id, key_name, api_key, api_secret, key_hash, permissions, rate_limit, rate_limit_window, is_active, last_used_at, usage_count, expires_at, created_by, metadata, created_at, updated_at, deleted_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: attachment_rotation_state; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.attachment_rotation_state (id, campaign_id, rotation_strategy, format_rotation_enabled, formats, current_format_index, total_formats, attachment_template_ids, current_template_index, rotation_count, usage_stats, last_rotated_at, last_used_format, is_active, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: attachments; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.attachments (id, campaign_id, template_id, filename, original_filename, file_path, file_size, file_hash, mime_type, file_format, is_inline, content_id, converted_from, conversion_backend, cache_key, cached_at, cache_hit_count, usage_count, settings, metadata, created_at, updated_at, deleted_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.audit_logs (id, entity_type, entity_id, action, actor, actor_ip, changes, old_values, new_values, success, error_message, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: campaign_delivery_metrics; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.campaign_delivery_metrics (id, campaign_id, account_id, latency_ms, sent_per_minute, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: campaign_recipient_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.campaign_recipient_stats (id, campaign_id, recipient_id, recipient_email, "time", sent, delivered, failed, hard_bounced, soft_bounced, complaint, unsubscribed, opens, unique_opens, clicks, unique_clicks, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: campaign_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.campaign_stats (id, campaign_id, snapshot_at, total_recipients, sent_count, failed_count, pending_count, bounced_count, success_rate, failure_rate, emails_per_minute, emails_per_hour, avg_send_time_ms, active_accounts, suspended_accounts, elapsed_time_seconds, estimated_time_remaining_seconds, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: campaigns; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.campaigns (id, name, description, status, session_id, total_recipients, sent_count, failed_count, pending_count, progress, starttime, endtime, scheduled_at, paused_at, resumed_at, worker_count, batch_size, rate_limit, subject_template, sender_name, reply_to, use_templates, use_attachments, use_personalization, rotation_strategy, error_message, last_error_at, retry_count, max_retries, config, metadata, created_by, created_at, updated_at, deleted_at, sender_name_rotation_enabled, subject_rotation_enabled, template_rotation_enabled, attachment_rotation_enabled, custom_field_rotation_enabled, started_at, completed_at, state, priority, failed_at, success_rate, throughput, estimated_eta, template_ids, account_ids, recipient_list_id, proxy_ids, tags, last_checkpoint, checkpoint_data, updated_by, is_archived, archived_at) FROM stdin;
+9138aa14-31d3-46b3-a33a-9c0c78aaa24f	Test Campaign 1	First test campaign	created	\N	1	0	0	0	0.00	\N	\N	\N	\N	\N	1	100	10	\N	\N	\N	t	f	t	round_robin	\N	\N	0	0	null	null		2026-02-27 02:52:39.873388	2026-02-27 02:52:39.873388	\N	f	f	f	f	f	\N	\N	idle	0	\N	0.00	0.00	\N	{8fd8326e-2774-4eac-8a1b-85d2a68b9dca}	{1dd7fa47-063f-4535-a763-800d97be1eca}	\N	\N	\N	\N	{}		f	\N
+baa39ecb-e03b-43b0-9ee1-5d0896c56f58	Test Campaign	\N	created	\N	0	0	0	0	0.00	\N	\N	\N	\N	\N	1	100	10	\N	\N	\N	t	f	t	round_robin	\N	\N	0	3	{}	{}	\N	2026-02-27 16:13:22.657726	2026-02-27 16:13:22.657726	\N	f	f	f	f	f	\N	\N	idle	0	\N	0.00	0.00	\N	{}	{}	\N	{}	{}	\N	{}		f	\N
+2a143f57-f381-4d11-b8af-af7a686ff4c6	Test Campaign Recipients	Test campaign for recipient testing	created	\N	0	0	0	0	0.00	\N	\N	\N	\N	\N	1	100	10	\N	\N	\N	t	f	t	round_robin	\N	\N	0	3	{"metadata": {"sender_names": ["Test Sender"], "template_dir": "./templates", "subject_lines": ["Test Subject"], "recipient_file": "./recipients.csv"}, "test_mode": false, "batch_size": 0, "enable_dkim": false, "track_opens": false, "enable_proxy": false, "track_clicks": false, "worker_count": 1, "enable_tracking": false, "use_html_content": false, "enable_attachments": false, "enable_unsubscribe": false, "spam_check_enabled": false, "max_retries_per_email": 0, "delay_between_emails_ms": 0, "enable_account_rotation": false, "personalization_enabled": false, "use_plain_text_fallback": false, "delay_between_batches_ms": 0, "enable_template_rotation": false}	{}		2026-02-28 14:31:44.383857	2026-02-28 14:31:44.383857	\N	f	f	f	f	f	\N	\N	idle	2	\N	0.00	0.00	\N	{079bde4d-cdc7-4ceb-8037-83351e8041bd}	{697edf16-5337-495f-ba48-8da13d3793d5}	\N	{}	{}	\N	{}		f	\N
+64c36585-c0d5-4e79-a3c3-9aab513f4e4f	Test Campaign Recipients	Test campaign for recipient testing	created	\N	0	0	0	0	0.00	\N	\N	\N	\N	\N	1	100	10	\N	\N	\N	t	f	t	round_robin	\N	\N	0	3	{"metadata": {"sender_names": ["Test Sender"], "template_dir": "./templates", "subject_lines": ["Test Subject"], "recipient_file": "./recipients.csv"}, "test_mode": false, "batch_size": 0, "enable_dkim": false, "track_opens": false, "enable_proxy": false, "track_clicks": false, "worker_count": 1, "enable_tracking": false, "use_html_content": false, "enable_attachments": false, "enable_unsubscribe": false, "spam_check_enabled": false, "max_retries_per_email": 0, "delay_between_emails_ms": 0, "enable_account_rotation": false, "personalization_enabled": false, "use_plain_text_fallback": false, "delay_between_batches_ms": 0, "enable_template_rotation": false}	{}		2026-02-28 15:00:11.022326	2026-02-28 15:00:11.022326	\N	f	f	f	f	f	\N	\N	idle	2	\N	0.00	0.00	\N	{980cba04-aff7-424f-9073-e29e388ca94d}	{ca6a4424-6104-4919-8332-4ff8c490a27b}	\N	{}	{}	\N	{}		f	\N
+150d8959-ff3d-4c78-a0ef-205c97d40f42	Test Campaign	Test campaign for recipient testing	created	\N	0	0	0	0	0.00	\N	\N	\N	\N	\N	1	100	10	\N	\N	\N	t	f	t	round_robin	\N	\N	0	3	{"metadata": {"sender_names": ["Test Sender"], "template_dir": "./templates", "subject_lines": ["Test Subject"], "recipient_file": "./recipients.csv"}, "test_mode": false, "batch_size": 0, "enable_dkim": false, "track_opens": false, "enable_proxy": false, "track_clicks": false, "worker_count": 1, "enable_tracking": false, "use_html_content": false, "enable_attachments": false, "enable_unsubscribe": false, "spam_check_enabled": false, "max_retries_per_email": 0, "delay_between_emails_ms": 0, "enable_account_rotation": false, "personalization_enabled": false, "use_plain_text_fallback": false, "delay_between_batches_ms": 0, "enable_template_rotation": false}	{}		2026-03-01 22:27:36.202707	2026-03-01 22:27:36.202707	\N	f	f	f	f	f	\N	\N	idle	2	\N	0.00	0.00	\N	{980cba04-aff7-424f-9073-e29e388ca94d}	{ca6a4424-6104-4919-8332-4ff8c490a27b}	\N	{}	{}	\N	{}		f	\N
+\.
+
+
+--
+-- Data for Name: config_history; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.config_history (id, config_id, section, key, old_value, new_value, changed_by, change_reason, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: configs; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.configs (id, section, key, value, type, default_value, description, validation, is_encrypted, is_sensitive, is_readonly, tags, metadata, version, created_at, updated_at, updated_by) FROM stdin;
+\.
+
+
+--
+-- Data for Name: custom_field_rotation; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.custom_field_rotation (id, campaign_id, field_name, rotation_strategy, field_values, current_index, total_values, rotation_count, weights, time_based_rules, usage_stats, last_rotated_at, last_used_value, is_active, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: delivery_time_series; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.delivery_time_series (id, campaign_id, account_id, sent, delivered, failed, hard_bounced, soft_bounced, complaint, unsubscribed, opens, clicks, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: email_logs; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.email_logs (id, campaign_id, recipient_id, account_id, recipient_email, sender_email, subject, status, message_id, sent_at, delivered_at, failed_at, bounced_at, error_message, error_code, error_type, smtp_response, http_status_code, retry_attempt, send_duration_ms, template_used, personalization_data, has_attachments, attachment_count, proxy_used, log_level, metadata, created_at, indexed_at, proxy_id, proxy_host, proxy_port) FROM stdin;
+\.
+
+
+--
+-- Data for Name: logs; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.logs (id, "time", level, category, sessionid, campaignid, accountid, recipientid, proxyid, templateid, message, details, errorcode, errorclass, stacktrace, requestid, traceid, spanid, httpmethod, httppath, httpstatus, durationms, clientip, useragent, nodeid, hostname, environment, shard, metricname, metricvalue, metricunit, metriclabels, userid, username, tenantid, source, subsystem, component, version, correlationid, archived, createdat) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notification_history; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.notification_history (id, event_type, channel, priority, title, message, chat_id, campaign_id, account_id, status, sent_at, delivered_at, failed_at, retry_count, error_message, error_code, message_id, response_data, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notification_queue; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.notification_queue (id, event_type, channel, priority, title, message, chat_ids, campaign_id, account_id, retry_count, max_retries, scheduled_at, next_retry_at, status, error_message, payload, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notification_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.notification_stats (id, date, hour, event_type, channel, total_sent, total_failed, total_pending, success_rate, avg_delivery_time_ms, by_priority, by_event, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notification_subscriptions; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.notification_subscriptions (id, event_type, channel, is_enabled, chat_ids, priority, throttle_enabled, throttle_minutes, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, filters, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: notification_templates; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.notification_templates (id, template_name, template_key, event_type, channel, title, message_template, format, variables, priority, is_enabled, settings, metadata, created_at, updated_at) FROM stdin;
+d6c87323-8eb1-4fb2-b843-d0d5decb6bd4	Campaign Started	campaign_started	campaign_started	telegram	🚀 Campaign Started	🚀 *Campaign Started*\\n\\n📋 Name: {{campaign_name}}\\n📊 Recipients: {{total_recipients}}\\n⏰ Started: {{start_time}}	markdown	[]	normal	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+ed09b61a-f840-465c-8de6-d5f03dddce79	Campaign Completed	campaign_completed	campaign_completed	telegram	✅ Campaign Completed	✅ *Campaign Completed*\\n\\n📋 Name: {{campaign_name}}\\n✉️ Sent: {{sent_count}}\\n❌ Failed: {{failed_count}}\\n📈 Success Rate: {{success_rate}}%\\n⏱ Duration: {{duration}}	markdown	[]	normal	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+c179c142-d68d-494e-902d-2dc3f089bc68	Campaign Failed	campaign_failed	campaign_failed	telegram	❌ Campaign Failed	❌ *Campaign Failed*\\n\\n📋 Name: {{campaign_name}}\\n⚠️ Error: {{error_message}}\\n⏰ Failed At: {{failed_time}}	markdown	[]	high	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+ac4f0049-5cbf-4c53-b4ba-ea4d78c8037f	Account Suspended	account_suspended	account_suspended	telegram	⚠️ Account Suspended	⚠️ *Account Suspended*\\n\\n📧 Email: {{account_email}}\\n🔒 Reason: {{suspension_reason}}\\n⏰ Time: {{suspended_at}}	markdown	[]	high	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+37a29e28-5be5-4ce3-9387-f6726979dd84	System Error	system_error	system_error	telegram	🔴 System Error	🔴 *System Error*\\n\\n⚠️ Error: {{error_message}}\\n📍 Location: {{error_location}}\\n⏰ Time: {{error_time}}	markdown	[]	critical	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+b47cf1b9-f25d-4303-995d-14faac8eddc3	Daily Limit Reached	daily_limit_reached	daily_limit_reached	telegram	📊 Daily Limit Reached	📊 *Daily Limit Reached*\\n\\n📧 Account: {{account_email}}\\n📈 Sent Today: {{sent_today}}\\n🎯 Limit: {{daily_limit}}	markdown	[]	normal	t	{}	{}	2026-02-16 01:41:23.148786	2026-02-16 01:41:23.148786
+\.
+
+
+--
+-- Data for Name: proxies; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.proxies (id, name, type, status, host, port, username, password, proxy_url, is_authenticated, health_score, last_checked_at, last_used_at, last_healthy_at, last_error_at, total_requests, success_count, failure_count, consecutive_fails, max_consecutive, latency_ms, min_latency_ms, max_latency_ms, response_times, is_anonymous, anonymity_verified_at, country, city, isp, location_checked_at, weight, priority, suspended_at, suspended_until, suspension_reason, is_active, settings, metadata, created_at, updated_at, deleted_at, region, provider, in_use, assigned_accounts, max_accounts, rotation_group, max_connections, current_conns, bandwidth_mb, bandwidth_limit_mb, last_error, tags, rotation_weight, lasthealthyat, reset_at, created_by, updated_by) FROM stdin;
+\.
+
+
+--
+-- Data for Name: proxy_health_checks; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.proxy_health_checks (id, proxy_id, check_time, success, latency_ms, status_code, error_message, error_type, test_url, test_target, anonymity_test, is_anonymous, location_detected, detected_country, detected_city, connection_time_ms, response_time_ms, health_score_after, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: proxy_rotation_config; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.proxy_rotation_config (id, config_name, strategy, enabled, min_health_score, max_failures_allowed, sticky_sessions, session_timeout_minutes, health_check_enabled, health_check_interval_minutes, auto_disable_failed, auto_enable_recovered, load_balancing_enabled, max_concurrent_per_proxy, proxy_pool, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: proxy_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.proxy_stats (id, proxy_id, date, hour, total_requests, successful_requests, failed_requests, success_rate, avg_latency_ms, min_latency_ms, max_latency_ms, total_bytes_sent, total_bytes_received, active_connections, max_concurrent_connections, health_score, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: recipients; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.recipients (id, list_id, email, name, first_name, last_name, status, custom_fields, sent_at, failed_at, bounced_at, account_id, template_id, retry_count, max_retries, error_message, error_code, message_id, opened_at, clicked_at, unsubscribed_at, metadata, created_at, updated_at, sender_used, subject_used, custom_fields_used, sent, failed) FROM stdin;
+d883c799-45d5-49dd-b32c-4798a46cfb00	baa39ecb-e03b-43b0-9ee1-5d0896c56f58	user1@example.com		John	Doe		null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-02-27 16:14:25.814552	2026-02-27 16:14:25.814552	\N	\N	{}	f	f
+15fd7bc8-79d8-44df-b09e-ff7ce13a37c3	64c36585-c0d5-4e79-a3c3-9aab513f4e4f	user33@example.com		John	Doe		null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-02-28 15:03:42.63151	2026-02-28 15:03:42.63151	\N	\N	{}	f	f
+ed5e159f-354c-49dc-a6cd-6bbd14719df4	64c36585-c0d5-4e79-a3c3-9aab513f4e4f	user22@example.com		Jane	Smith		null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-02-28 15:03:42.652706	2026-02-28 15:03:42.652706	\N	\N	{}	f	f
+591ec44e-3b1d-4360-830b-ac261a2ada95	64c36585-c0d5-4e79-a3c3-9aab513f4e4f	user222@example.com		Jane	Smith	active	null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-03-01 22:21:37.019414	2026-03-01 22:21:37.019414	\N	\N	{}	f	f
+7c87bfb5-5bc6-4652-ac1e-25ba51f8be6e	150d8959-ff3d-4c78-a0ef-205c97d40f42	user2222@example.com		Jane	Smith	active	null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-03-01 22:27:51.879	2026-03-01 22:27:51.879	\N	\N	{}	f	f
+ee8ac32f-aac6-4b21-aafc-10e6c0f88131	150d8959-ff3d-4c78-a0ef-205c97d40f42	user2522@example.com		Jane	Smith	active	null	\N	\N	\N	\N	\N	0	3	\N	\N	\N	\N	\N	\N	null	2026-03-01 22:27:51.897896	2026-03-01 22:27:51.897896	\N	\N	{}	f	f
+\.
+
+
+--
+-- Data for Name: rotation_history; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.rotation_history (id, campaign_id, rotation_type, rotated_at, previous_value, current_value, previous_index, current_index, strategy_used, recipient_id, recipient_email, rotation_reason, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: rotation_performance_stats; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.rotation_performance_stats (id, campaign_id, rotation_type, date, hour, total_rotations, items_used, strategy_used, avg_rotation_time_ms, success_count, failure_count, performance_data, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: rotation_tracking; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.rotation_tracking (id, campaign_id, rotation_type, current_index, total_items, rotation_count, strategy, items, usage_stats, last_rotated_at, settings, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: sender_name_rotation; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.sender_name_rotation (id, campaign_id, rotation_strategy, sender_names, current_index, total_names, rotation_count, weights, time_based_rules, usage_stats, last_rotated_at, last_used_name, is_active, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: sessions; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.sessions (id, session_id, session_name, campaign_ids, status, started_at, ended_at, expires_at, total_campaigns, active_campaigns, state_data, created_by, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: subject_rotation; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.subject_rotation (id, campaign_id, rotation_strategy, subject_lines, current_index, total_subjects, rotation_count, weights, time_based_rules, usage_stats, last_rotated_at, last_used_subject, is_active, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: system_config; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.system_config (id, config_key, config_value, config_type, category, description, is_encrypted, is_sensitive, validation_rule, default_value, is_active, metadata, created_at, updated_at) FROM stdin;
+33a3483e-2999-4898-bb17-60473acca398	system.version	1.0.0	string	system	System version	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+bec581a8-8413-4413-b220-d86765f7ecc2	system.timezone	UTC	string	system	Default timezone	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+29f480e5-2729-475a-8483-9bea4a6cc620	email.max_workers	4	integer	email	Maximum concurrent workers	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+7eb7311e-8d80-4344-b918-41c864476594	email.batch_size	100	integer	email	Default batch size	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+7486baf4-4c5a-4cff-95ad-c3d4e6b89de4	email.rate_limit	10	integer	email	Default rate limit per second	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+78e80b40-689c-42eb-aa90-714fe53c7d35	account.daily_limit	500	integer	account	Default daily sending limit	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+b28aeea9-26fb-4928-aacb-d549b29830f9	account.rotation_limit	50	integer	account	Default rotation limit	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+62745c10-6a7f-4e5b-b32f-ae2973073f24	account.suspension_threshold	5	integer	account	Consecutive failures before suspension	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+4692d58e-8883-4d92-8374-dcfde587de0f	template.max_spam_score	5.0	decimal	template	Maximum acceptable spam score	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+ca55aa31-c19a-4686-9b56-26ebda36cf9f	cleanup.retention_days	30	integer	cleanup	Log retention period in days	f	f	\N	\N	t	{}	2026-02-16 01:41:23.039692	2026-02-16 01:41:23.039692
+aeb79808-5c99-49a9-a000-3b08b9f36ad6	proxy.health_check_enabled	true	boolean	proxy	Enable automatic proxy health checking	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+8a77b040-aca2-42ac-ad1b-b7a6f2649bc3	proxy.health_check_interval	5	integer	proxy	Health check interval in minutes	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+8b228e0a-9793-4cb9-ba6f-b32e8c3e53ed	proxy.health_check_timeout	10	integer	proxy	Health check timeout in seconds	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+add34506-f240-4642-a2f4-b534f7540e7c	proxy.min_health_score	0.5	decimal	proxy	Minimum health score for proxy usage	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+0ba22b88-afc5-4dc8-a584-2286478bdacd	proxy.max_failures	5	integer	proxy	Maximum consecutive failures before suspension	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+86e3874c-f368-41c2-bf13-b8374158e774	proxy.suspension_duration	30	integer	proxy	Proxy suspension duration in minutes	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+fc4e9870-23d4-4d8f-af3e-4928d9ae6b91	proxy.rotation_strategy	round_robin	string	proxy	Default proxy rotation strategy	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+8dc61bc1-e10a-4931-ac0b-5bf755be3049	proxy.max_concurrent	100	integer	proxy	Maximum concurrent connections per proxy	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+c8111bef-36b9-4dc4-9fab-6625d9cbf81e	proxy.test_url	https://www.google.com	string	proxy	Default URL for proxy testing	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+2df24670-46b2-4198-a4f6-352663e5f49d	proxy.verify_anonymity	false	boolean	proxy	Verify proxy anonymity on health check	f	f	\N	\N	t	{}	2026-02-16 01:41:23.089902	2026-02-16 01:41:23.089902
+6ba1d3f4-ac56-416f-b08b-c3ebb09d1f41	notification.telegram.enabled	false	boolean	notification	Enable Telegram notifications	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+0849bd48-ec6f-44b8-bfde-21d620236c98	notification.telegram.retry_enabled	true	boolean	notification	Enable retry for failed notifications	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+bafc30f7-938e-415e-af25-f74c6853a631	notification.telegram.max_retries	3	integer	notification	Maximum retry attempts	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+d780cb33-691f-4157-87a2-8b5a88b03082	notification.telegram.retry_delay	5	integer	notification	Delay between retries in seconds	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+87a73986-945a-477b-bfbc-88132fa7838f	notification.telegram.rate_limit	30	integer	notification	Maximum messages per window	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+5105314d-9d41-49b3-9e59-0b8da70d034b	notification.telegram.rate_window	60	integer	notification	Rate limit window in seconds	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+3c27fbe9-bb9f-40e2-a47d-534407846141	notification.quiet_hours_enabled	false	boolean	notification	Enable quiet hours	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+ea5403cd-cc7c-4742-aeb2-7a6f5d98fd75	notification.quiet_hours_start	22:00	string	notification	Quiet hours start time	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+5bccccd5-fbeb-4db1-a0f8-03621e7fc1ec	notification.quiet_hours_end	08:00	string	notification	Quiet hours end time	f	f	\N	\N	t	{}	2026-02-16 01:41:23.151504	2026-02-16 01:41:23.151504
+013b6c40-8b53-4123-bbaa-a9290fb992c4	rotation.sender_name.enabled	false	boolean	rotation	Enable sender name rotation	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+8aa6e062-8674-4403-8258-1dd0f8045646	rotation.sender_name.strategy	round_robin	string	rotation	Default sender name rotation strategy	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+fb64a34e-8662-4a6f-81c1-8a30feb84f3b	rotation.subject.enabled	false	boolean	rotation	Enable subject line rotation	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+4fd5f6ef-019e-4027-b743-4b71f17083ba	rotation.subject.strategy	round_robin	string	rotation	Default subject rotation strategy	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+302c443e-b2c4-41b2-abf6-4b59ab7d68b9	rotation.template.enabled	false	boolean	rotation	Enable template rotation	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+00037d8f-ac06-4050-9466-d0b920a0f424	rotation.template.strategy	round_robin	string	rotation	Default template rotation strategy	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+9de40296-77d3-4d6d-a10e-b826dc48f1e6	rotation.attachment.enabled	false	boolean	rotation	Enable attachment format rotation	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+e58a8100-bf97-43f6-8395-5c3b9e7f270f	rotation.attachment.formats	pdf,jpg,png,webp	string	rotation	Supported attachment formats	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+28d4ac6d-41bd-4ab4-b9d1-4d6d6f6410c7	rotation.custom_field.enabled	false	boolean	rotation	Enable custom field rotation	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+0943bc18-c30f-4543-b325-da27c0fb5cdd	rotation.track_history	true	boolean	rotation	Track rotation history	f	f	\N	\N	t	{}	2026-02-16 01:41:23.188966	2026-02-16 01:41:23.188966
+\.
+
+
+--
+-- Data for Name: telegram_config; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.telegram_config (id, bot_token, bot_username, chat_ids, is_enabled, parse_mode, disable_notification, disable_web_page_preview, retry_enabled, max_retries, retry_delay_seconds, rate_limit_messages, rate_limit_window_seconds, last_test_at, test_success, test_error, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: template_rotation_state; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.template_rotation_state (id, campaign_id, rotation_strategy, template_ids, current_index, total_templates, rotation_count, weights, usage_stats, last_rotated_at, last_used_template_id, is_active, settings, metadata, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: templates; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.templates (id, name, description, subject, content, plain_text, template_type, category, variables, spam_score, spam_check_result, spam_checked_at, version, parent_template_id, is_active, is_default, usage_count, last_used_at, settings, metadata, created_by, created_at, updated_at, deleted_at, is_archived, html_content, slug, language, type, from_name, from_email, reply_to, text_content, preheader, custom_headers, attachments, tags, spam_details, last_spam_check_at, render_count, last_rendered_at, failure_count, last_failure_at, last_failure_msg, engine, rendering_config, rotation_group, rotation_weight, rotation_index, archived_at, updated_by, success_rate) FROM stdin;
+c7bf2378-a526-4eb5-a328-280860585db7	welcome_email			<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>		html		\N	2.25	\N	\N	0	\N	t	f	0	\N	{}	null		2026-02-26 11:26:50.425658	2026-02-26 11:26:50.425659	\N	f	<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>									null	\N	\N	null	\N	0	\N	0	\N			null		0	0	\N		0.00
+bdfdda74-7ee3-4a65-aaf1-d3fc5e151e0a	welcome_1email			<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>		html		\N	2.25	\N	\N	0	\N	t	f	0	\N	{}	null		2026-02-26 11:49:41.373909	2026-02-26 11:49:41.373909	\N	f	<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>	welcome1email								null	\N	\N	null	\N	0	\N	0	\N			null		0	0	\N		0.00
+8fd8326e-2774-4eac-8a1b-85d2a68b9dca	1welcome_1email			<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>		html		\N	2.25	\N	\N	0	\N	t	f	0	\N	{}	null		2026-02-26 12:07:49.824917	2026-02-26 12:07:49.824917	\N	f	<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>	1welcome1email								null	\N	\N	null	\N	0	\N	0	\N			null		0	0	\N		0.00
+079bde4d-cdc7-4ceb-8037-83351e8041bd	1welcome11_1email			<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>		html		\N	2.25	\N	\N	0	\N	t	f	0	\N	{}	null		2026-02-28 14:21:14.807399	2026-02-28 14:21:14.807399	\N	f	<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>	1welcome111email								null	\N	\N	null	\N	0	\N	0	\N			null		0	0	\N		0.00
+980cba04-aff7-424f-9073-e29e388ca94d	1welcome12_1email			<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>		html		\N	2.25	\N	\N	0	\N	t	f	0	\N	{}	null		2026-02-28 14:59:33.487055	2026-02-28 14:59:33.487055	\N	f	<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>	1welcome121email								null	\N	\N	null	\N	0	\N	0	\N			null		0	0	\N		0.00
+\.
+
+
+--
+-- Data for Name: unsubscribe_requests; Type: TABLE DATA; Schema: public; Owner: rahman
+--
+
+COPY public.unsubscribe_requests (id, email, campaign_id, unsubscribe_token, unsubscribed_at, ip_address, user_agent, reason, verified, verified_at, metadata, created_at) FROM stdin;
+\.
+
+
+--
+-- Name: account_delivery_stats account_delivery_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_delivery_stats
+    ADD CONSTRAINT account_delivery_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_proxy_mapping account_proxy_mapping_account_id_proxy_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_proxy_mapping
+    ADD CONSTRAINT account_proxy_mapping_account_id_proxy_id_key UNIQUE (account_id, proxy_id);
+
+
+--
+-- Name: account_proxy_mapping account_proxy_mapping_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_proxy_mapping
+    ADD CONSTRAINT account_proxy_mapping_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_rotation_metrics account_rotation_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_rotation_metrics
+    ADD CONSTRAINT account_rotation_metrics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_stats account_stats_account_id_date_hour_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_stats
+    ADD CONSTRAINT account_stats_account_id_date_hour_key UNIQUE (account_id, date, hour);
+
+
+--
+-- Name: account_stats account_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_stats
+    ADD CONSTRAINT account_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: accounts accounts_email_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_email_key UNIQUE (email);
+
+
+--
+-- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: api_keys api_keys_api_key_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.api_keys
+    ADD CONSTRAINT api_keys_api_key_key UNIQUE (api_key);
+
+
+--
+-- Name: api_keys api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.api_keys
+    ADD CONSTRAINT api_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: attachment_rotation_state attachment_rotation_state_campaign_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachment_rotation_state
+    ADD CONSTRAINT attachment_rotation_state_campaign_id_key UNIQUE (campaign_id);
+
+
+--
+-- Name: attachment_rotation_state attachment_rotation_state_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachment_rotation_state
+    ADD CONSTRAINT attachment_rotation_state_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: attachments attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: campaign_delivery_metrics campaign_delivery_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_delivery_metrics
+    ADD CONSTRAINT campaign_delivery_metrics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: campaign_recipient_stats campaign_recipient_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_recipient_stats
+    ADD CONSTRAINT campaign_recipient_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: campaign_stats campaign_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_stats
+    ADD CONSTRAINT campaign_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: campaigns campaigns_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT campaigns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: config_history config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.config_history
+    ADD CONSTRAINT config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configs configs_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.configs
+    ADD CONSTRAINT configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configs configs_section_key_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.configs
+    ADD CONSTRAINT configs_section_key_key UNIQUE (section, key);
+
+
+--
+-- Name: custom_field_rotation custom_field_rotation_campaign_id_field_name_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.custom_field_rotation
+    ADD CONSTRAINT custom_field_rotation_campaign_id_field_name_key UNIQUE (campaign_id, field_name);
+
+
+--
+-- Name: custom_field_rotation custom_field_rotation_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.custom_field_rotation
+    ADD CONSTRAINT custom_field_rotation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_time_series delivery_time_series_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.delivery_time_series
+    ADD CONSTRAINT delivery_time_series_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_logs email_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: logs logs_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.logs
+    ADD CONSTRAINT logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_history notification_history_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_history
+    ADD CONSTRAINT notification_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_queue notification_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_queue
+    ADD CONSTRAINT notification_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_stats notification_stats_date_hour_event_type_channel_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_stats
+    ADD CONSTRAINT notification_stats_date_hour_event_type_channel_key UNIQUE (date, hour, event_type, channel);
+
+
+--
+-- Name: notification_stats notification_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_stats
+    ADD CONSTRAINT notification_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_subscriptions notification_subscriptions_event_type_channel_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_subscriptions
+    ADD CONSTRAINT notification_subscriptions_event_type_channel_key UNIQUE (event_type, channel);
+
+
+--
+-- Name: notification_subscriptions notification_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_subscriptions
+    ADD CONSTRAINT notification_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_templates notification_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_templates
+    ADD CONSTRAINT notification_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_templates notification_templates_template_key_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_templates
+    ADD CONSTRAINT notification_templates_template_key_key UNIQUE (template_key);
+
+
+--
+-- Name: notification_templates notification_templates_template_name_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_templates
+    ADD CONSTRAINT notification_templates_template_name_key UNIQUE (template_name);
+
+
+--
+-- Name: proxies proxies_host_port_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxies
+    ADD CONSTRAINT proxies_host_port_key UNIQUE (host, port);
+
+
+--
+-- Name: proxies proxies_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxies
+    ADD CONSTRAINT proxies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: proxy_health_checks proxy_health_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_health_checks
+    ADD CONSTRAINT proxy_health_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: proxy_rotation_config proxy_rotation_config_config_name_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_rotation_config
+    ADD CONSTRAINT proxy_rotation_config_config_name_key UNIQUE (config_name);
+
+
+--
+-- Name: proxy_rotation_config proxy_rotation_config_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_rotation_config
+    ADD CONSTRAINT proxy_rotation_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: proxy_stats proxy_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_stats
+    ADD CONSTRAINT proxy_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: proxy_stats proxy_stats_proxy_id_date_hour_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_stats
+    ADD CONSTRAINT proxy_stats_proxy_id_date_hour_key UNIQUE (proxy_id, date, hour);
+
+
+--
+-- Name: recipients recipients_campaign_id_email_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.recipients
+    ADD CONSTRAINT recipients_campaign_id_email_key UNIQUE (list_id, email);
+
+
+--
+-- Name: recipients recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.recipients
+    ADD CONSTRAINT recipients_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rotation_history rotation_history_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_history
+    ADD CONSTRAINT rotation_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rotation_performance_stats rotation_performance_stats_campaign_id_rotation_type_date_h_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_performance_stats
+    ADD CONSTRAINT rotation_performance_stats_campaign_id_rotation_type_date_h_key UNIQUE (campaign_id, rotation_type, date, hour);
+
+
+--
+-- Name: rotation_performance_stats rotation_performance_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_performance_stats
+    ADD CONSTRAINT rotation_performance_stats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rotation_tracking rotation_tracking_campaign_id_rotation_type_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_tracking
+    ADD CONSTRAINT rotation_tracking_campaign_id_rotation_type_key UNIQUE (campaign_id, rotation_type);
+
+
+--
+-- Name: rotation_tracking rotation_tracking_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_tracking
+    ADD CONSTRAINT rotation_tracking_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sender_name_rotation sender_name_rotation_campaign_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.sender_name_rotation
+    ADD CONSTRAINT sender_name_rotation_campaign_id_key UNIQUE (campaign_id);
+
+
+--
+-- Name: sender_name_rotation sender_name_rotation_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.sender_name_rotation
+    ADD CONSTRAINT sender_name_rotation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sessions sessions_session_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_session_id_key UNIQUE (session_id);
+
+
+--
+-- Name: subject_rotation subject_rotation_campaign_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.subject_rotation
+    ADD CONSTRAINT subject_rotation_campaign_id_key UNIQUE (campaign_id);
+
+
+--
+-- Name: subject_rotation subject_rotation_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.subject_rotation
+    ADD CONSTRAINT subject_rotation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: system_config system_config_config_key_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.system_config
+    ADD CONSTRAINT system_config_config_key_key UNIQUE (config_key);
+
+
+--
+-- Name: system_config system_config_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.system_config
+    ADD CONSTRAINT system_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: telegram_config telegram_config_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.telegram_config
+    ADD CONSTRAINT telegram_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: template_rotation_state template_rotation_state_campaign_id_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.template_rotation_state
+    ADD CONSTRAINT template_rotation_state_campaign_id_key UNIQUE (campaign_id);
+
+
+--
+-- Name: template_rotation_state template_rotation_state_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.template_rotation_state
+    ADD CONSTRAINT template_rotation_state_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: templates templates_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.templates
+    ADD CONSTRAINT templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: templates templates_slug_unique; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.templates
+    ADD CONSTRAINT templates_slug_unique UNIQUE (slug);
+
+
+--
+-- Name: unsubscribe_requests unsubscribe_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.unsubscribe_requests
+    ADD CONSTRAINT unsubscribe_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: unsubscribe_requests unsubscribe_requests_unsubscribe_token_key; Type: CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.unsubscribe_requests
+    ADD CONSTRAINT unsubscribe_requests_unsubscribe_token_key UNIQUE (unsubscribe_token);
+
+
+--
+-- Name: idx_account_proxy_mapping_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_proxy_mapping_account_id ON public.account_proxy_mapping USING btree (account_id);
+
+
+--
+-- Name: idx_account_proxy_mapping_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_proxy_mapping_is_active ON public.account_proxy_mapping USING btree (is_active);
+
+
+--
+-- Name: idx_account_proxy_mapping_proxy_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_proxy_mapping_proxy_id ON public.account_proxy_mapping USING btree (proxy_id);
+
+
+--
+-- Name: idx_account_stats_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_stats_account_id ON public.account_stats USING btree (account_id);
+
+
+--
+-- Name: idx_account_stats_account_id_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_stats_account_id_date ON public.account_stats USING btree (account_id, date DESC);
+
+
+--
+-- Name: idx_account_stats_account_id_hour; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_stats_account_id_hour ON public.account_stats USING btree (account_id, date DESC, hour);
+
+
+--
+-- Name: idx_account_stats_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_stats_date ON public.account_stats USING btree (date DESC);
+
+
+--
+-- Name: idx_account_stats_date_hour; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_account_stats_date_hour ON public.account_stats USING btree (date DESC, hour);
+
+
+--
+-- Name: idx_accounts_daily_sent_count; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_daily_sent_count ON public.accounts USING btree (sent_today, daily_limit) WHERE (status = 'active'::public.account_status);
+
+
+--
+-- Name: idx_accounts_email; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_email ON public.accounts USING btree (email);
+
+
+--
+-- Name: idx_accounts_health; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_health ON public.accounts USING btree (health_score);
+
+
+--
+-- Name: idx_accounts_health_score; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_health_score ON public.accounts USING btree (health_score);
+
+
+--
+-- Name: idx_accounts_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_is_active ON public.accounts USING btree (is_active);
+
+
+--
+-- Name: idx_accounts_is_suspended; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_is_suspended ON public.accounts USING btree (is_suspended);
+
+
+--
+-- Name: idx_accounts_last_used_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_last_used_at ON public.accounts USING btree (last_used_at);
+
+
+--
+-- Name: idx_accounts_provider; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_provider ON public.accounts USING btree (provider);
+
+
+--
+-- Name: idx_accounts_provider_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_provider_status ON public.accounts USING btree (provider, status);
+
+
+--
+-- Name: idx_accounts_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_status ON public.accounts USING btree (status);
+
+
+--
+-- Name: idx_accounts_status_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_status_active ON public.accounts USING btree (status) WHERE (status = 'active'::public.account_status);
+
+
+--
+-- Name: idx_accounts_suspended_until; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_suspended_until ON public.accounts USING btree (suspended_until) WHERE (status = 'suspended'::public.account_status);
+
+
+--
+-- Name: idx_accounts_updated; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_accounts_updated ON public.accounts USING btree (updated_at DESC);
+
+
+--
+-- Name: idx_ads_account_created; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_ads_account_created ON public.account_delivery_stats USING btree (account_id, created_at DESC);
+
+
+--
+-- Name: idx_ads_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_ads_account_id ON public.account_delivery_stats USING btree (account_id);
+
+
+--
+-- Name: idx_ads_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_ads_created_at ON public.account_delivery_stats USING btree (created_at DESC);
+
+
+--
+-- Name: idx_ads_provider; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_ads_provider ON public.account_delivery_stats USING btree (provider);
+
+
+--
+-- Name: idx_api_keys_api_key; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_api_keys_api_key ON public.api_keys USING btree (api_key);
+
+
+--
+-- Name: idx_api_keys_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_api_keys_is_active ON public.api_keys USING btree (is_active);
+
+
+--
+-- Name: idx_arm_account_created; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_arm_account_created ON public.account_rotation_metrics USING btree (account_id, created_at DESC);
+
+
+--
+-- Name: idx_arm_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_arm_account_id ON public.account_rotation_metrics USING btree (account_id);
+
+
+--
+-- Name: idx_arm_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_arm_created_at ON public.account_rotation_metrics USING btree (created_at DESC);
+
+
+--
+-- Name: idx_attachment_rotation_state_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachment_rotation_state_campaign_id ON public.attachment_rotation_state USING btree (campaign_id);
+
+
+--
+-- Name: idx_attachment_rotation_state_campaign_id_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachment_rotation_state_campaign_id_active ON public.attachment_rotation_state USING btree (campaign_id, is_active);
+
+
+--
+-- Name: idx_attachment_rotation_state_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachment_rotation_state_is_active ON public.attachment_rotation_state USING btree (is_active);
+
+
+--
+-- Name: idx_attachment_rotation_state_last_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachment_rotation_state_last_rotated_at ON public.attachment_rotation_state USING btree (last_rotated_at);
+
+
+--
+-- Name: idx_attachments_cache_key; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachments_cache_key ON public.attachments USING btree (cache_key);
+
+
+--
+-- Name: idx_attachments_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachments_campaign_id ON public.attachments USING btree (campaign_id);
+
+
+--
+-- Name: idx_attachments_file_hash; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_attachments_file_hash ON public.attachments USING btree (file_hash);
+
+
+--
+-- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action);
+
+
+--
+-- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_entity_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_audit_logs_entity_id ON public.audit_logs USING btree (entity_id);
+
+
+--
+-- Name: idx_audit_logs_entity_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_audit_logs_entity_type ON public.audit_logs USING btree (entity_type);
+
+
+--
+-- Name: idx_campaign_stats_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaign_stats_campaign_id ON public.campaign_stats USING btree (campaign_id);
+
+
+--
+-- Name: idx_campaign_stats_campaign_id_snapshot; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaign_stats_campaign_id_snapshot ON public.campaign_stats USING btree (campaign_id, snapshot_at DESC);
+
+
+--
+-- Name: idx_campaign_stats_snapshot_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaign_stats_snapshot_at ON public.campaign_stats USING btree (snapshot_at DESC);
+
+
+--
+-- Name: idx_campaigns_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_created_at ON public.campaigns USING btree (created_at DESC);
+
+
+--
+-- Name: idx_campaigns_end_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_end_time ON public.campaigns USING btree (endtime DESC) WHERE (endtime IS NOT NULL);
+
+
+--
+-- Name: idx_campaigns_is_archived; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_is_archived ON public.campaigns USING btree (is_archived);
+
+
+--
+-- Name: idx_campaigns_scheduled_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_scheduled_at ON public.campaigns USING btree (scheduled_at) WHERE (scheduled_at IS NOT NULL);
+
+
+--
+-- Name: idx_campaigns_session_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_session_id ON public.campaigns USING btree (session_id);
+
+
+--
+-- Name: idx_campaigns_start_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_start_time ON public.campaigns USING btree (starttime DESC) WHERE (starttime IS NOT NULL);
+
+
+--
+-- Name: idx_campaigns_state; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_state ON public.campaigns USING btree (state);
+
+
+--
+-- Name: idx_campaigns_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_status ON public.campaigns USING btree (status);
+
+
+--
+-- Name: idx_campaigns_status_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_status_created_at ON public.campaigns USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_campaigns_status_scheduled_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_campaigns_status_scheduled_at ON public.campaigns USING btree (status, scheduled_at) WHERE (scheduled_at IS NOT NULL);
+
+
+--
+-- Name: idx_cdm_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_cdm_campaign_id ON public.campaign_delivery_metrics USING btree (campaign_id);
+
+
+--
+-- Name: idx_cdm_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_cdm_created_at ON public.campaign_delivery_metrics USING btree (created_at DESC);
+
+
+--
+-- Name: idx_cdm_latency_nonzero; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_cdm_latency_nonzero ON public.campaign_delivery_metrics USING btree (latency_ms) WHERE (latency_ms > (0)::numeric);
+
+
+--
+-- Name: idx_configs_key; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_configs_key ON public.configs USING btree (key);
+
+
+--
+-- Name: idx_configs_section; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_configs_section ON public.configs USING btree (section);
+
+
+--
+-- Name: idx_crs_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_crs_campaign_id ON public.campaign_recipient_stats USING btree (campaign_id);
+
+
+--
+-- Name: idx_crs_campaign_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_crs_campaign_time ON public.campaign_recipient_stats USING btree (campaign_id, "time" DESC);
+
+
+--
+-- Name: idx_crs_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_crs_time ON public.campaign_recipient_stats USING btree ("time" DESC);
+
+
+--
+-- Name: idx_custom_field_rotation_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_custom_field_rotation_campaign_id ON public.custom_field_rotation USING btree (campaign_id);
+
+
+--
+-- Name: idx_custom_field_rotation_campaign_id_field; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_custom_field_rotation_campaign_id_field ON public.custom_field_rotation USING btree (campaign_id, field_name);
+
+
+--
+-- Name: idx_custom_field_rotation_field_name; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_custom_field_rotation_field_name ON public.custom_field_rotation USING btree (field_name);
+
+
+--
+-- Name: idx_custom_field_rotation_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_custom_field_rotation_is_active ON public.custom_field_rotation USING btree (is_active);
+
+
+--
+-- Name: idx_dts_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_dts_account_id ON public.delivery_time_series USING btree (account_id) WHERE (account_id IS NOT NULL);
+
+
+--
+-- Name: idx_dts_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_dts_campaign_id ON public.delivery_time_series USING btree (campaign_id) WHERE (campaign_id IS NOT NULL);
+
+
+--
+-- Name: idx_dts_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_dts_created_at ON public.delivery_time_series USING btree (created_at DESC);
+
+
+--
+-- Name: idx_dts_created_campaign; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_dts_created_campaign ON public.delivery_time_series USING btree (created_at, campaign_id);
+
+
+--
+-- Name: idx_email_logs_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_account_id ON public.email_logs USING btree (account_id);
+
+
+--
+-- Name: idx_email_logs_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_campaign_id ON public.email_logs USING btree (campaign_id);
+
+
+--
+-- Name: idx_email_logs_campaign_id_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_campaign_id_created_at ON public.email_logs USING btree (campaign_id, created_at DESC);
+
+
+--
+-- Name: idx_email_logs_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_created_at ON public.email_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_email_logs_level_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_level_created_at ON public.email_logs USING btree (log_level, created_at DESC);
+
+
+--
+-- Name: idx_email_logs_recipient_email; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_recipient_email ON public.email_logs USING btree (recipient_email);
+
+
+--
+-- Name: idx_email_logs_recipient_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_recipient_id ON public.email_logs USING btree (recipient_id);
+
+
+--
+-- Name: idx_email_logs_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_email_logs_status ON public.email_logs USING btree (status);
+
+
+--
+-- Name: idx_logs_accountid; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_accountid ON public.logs USING btree (accountid);
+
+
+--
+-- Name: idx_logs_archived; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_archived ON public.logs USING btree (archived) WHERE (archived = false);
+
+
+--
+-- Name: idx_logs_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_campaign_id ON public.logs USING btree (campaignid);
+
+
+--
+-- Name: idx_logs_campaignid; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_campaignid ON public.logs USING btree (campaignid);
+
+
+--
+-- Name: idx_logs_category; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_category ON public.logs USING btree (category);
+
+
+--
+-- Name: idx_logs_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_created_at ON public.logs USING btree (createdat DESC);
+
+
+--
+-- Name: idx_logs_createdat; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_createdat ON public.logs USING btree (createdat DESC);
+
+
+--
+-- Name: idx_logs_errorcode; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_errorcode ON public.logs USING btree (errorcode);
+
+
+--
+-- Name: idx_logs_level; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_level ON public.logs USING btree (level);
+
+
+--
+-- Name: idx_logs_recipientid; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_recipientid ON public.logs USING btree (recipientid);
+
+
+--
+-- Name: idx_logs_sessionid; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_sessionid ON public.logs USING btree (sessionid);
+
+
+--
+-- Name: idx_logs_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_logs_time ON public.logs USING btree ("time" DESC);
+
+
+--
+-- Name: idx_notification_history_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_campaign_id ON public.notification_history USING btree (campaign_id);
+
+
+--
+-- Name: idx_notification_history_campaign_id_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_campaign_id_created_at ON public.notification_history USING btree (campaign_id, created_at DESC);
+
+
+--
+-- Name: idx_notification_history_channel; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_channel ON public.notification_history USING btree (channel);
+
+
+--
+-- Name: idx_notification_history_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_created_at ON public.notification_history USING btree (created_at DESC);
+
+
+--
+-- Name: idx_notification_history_event_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_event_type ON public.notification_history USING btree (event_type);
+
+
+--
+-- Name: idx_notification_history_event_type_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_event_type_created_at ON public.notification_history USING btree (event_type, created_at DESC);
+
+
+--
+-- Name: idx_notification_history_sent_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_sent_at ON public.notification_history USING btree (sent_at DESC) WHERE (sent_at IS NOT NULL);
+
+
+--
+-- Name: idx_notification_history_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_status ON public.notification_history USING btree (status);
+
+
+--
+-- Name: idx_notification_history_status_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_history_status_created_at ON public.notification_history USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_notification_queue_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_campaign_id ON public.notification_queue USING btree (campaign_id);
+
+
+--
+-- Name: idx_notification_queue_campaign_id_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_campaign_id_status ON public.notification_queue USING btree (campaign_id, status);
+
+
+--
+-- Name: idx_notification_queue_next_retry_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_next_retry_at ON public.notification_queue USING btree (next_retry_at) WHERE ((status = 'pending'::public.notification_status) AND (next_retry_at IS NOT NULL));
+
+
+--
+-- Name: idx_notification_queue_priority; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_priority ON public.notification_queue USING btree (priority);
+
+
+--
+-- Name: idx_notification_queue_priority_scheduled_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_priority_scheduled_at ON public.notification_queue USING btree (priority DESC, scheduled_at);
+
+
+--
+-- Name: idx_notification_queue_scheduled_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_scheduled_at ON public.notification_queue USING btree (scheduled_at);
+
+
+--
+-- Name: idx_notification_queue_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_status ON public.notification_queue USING btree (status);
+
+
+--
+-- Name: idx_notification_queue_status_scheduled_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_queue_status_scheduled_at ON public.notification_queue USING btree (status, scheduled_at);
+
+
+--
+-- Name: idx_notification_stats_channel; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_stats_channel ON public.notification_stats USING btree (channel);
+
+
+--
+-- Name: idx_notification_stats_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_stats_date ON public.notification_stats USING btree (date DESC);
+
+
+--
+-- Name: idx_notification_stats_event_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_stats_event_type ON public.notification_stats USING btree (event_type);
+
+
+--
+-- Name: idx_notification_stats_hour; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_stats_hour ON public.notification_stats USING btree (hour);
+
+
+--
+-- Name: idx_notification_subscriptions_channel; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_subscriptions_channel ON public.notification_subscriptions USING btree (channel);
+
+
+--
+-- Name: idx_notification_subscriptions_event_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_subscriptions_event_type ON public.notification_subscriptions USING btree (event_type);
+
+
+--
+-- Name: idx_notification_subscriptions_is_enabled; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_subscriptions_is_enabled ON public.notification_subscriptions USING btree (is_enabled);
+
+
+--
+-- Name: idx_notification_templates_channel; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_templates_channel ON public.notification_templates USING btree (channel);
+
+
+--
+-- Name: idx_notification_templates_event_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_templates_event_type ON public.notification_templates USING btree (event_type);
+
+
+--
+-- Name: idx_notification_templates_is_enabled; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_templates_is_enabled ON public.notification_templates USING btree (is_enabled);
+
+
+--
+-- Name: idx_notification_templates_template_key; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_notification_templates_template_key ON public.notification_templates USING btree (template_key);
+
+
+--
+-- Name: idx_proxies_health_score; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_health_score ON public.proxies USING btree (health_score);
+
+
+--
+-- Name: idx_proxies_host_port; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_host_port ON public.proxies USING btree (host, port);
+
+
+--
+-- Name: idx_proxies_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_is_active ON public.proxies USING btree (is_active);
+
+
+--
+-- Name: idx_proxies_last_checked; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_last_checked ON public.proxies USING btree (last_checked_at);
+
+
+--
+-- Name: idx_proxies_last_used; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_last_used ON public.proxies USING btree (last_used_at);
+
+
+--
+-- Name: idx_proxies_proxy_type_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_proxy_type_status ON public.proxies USING btree (type, status);
+
+
+--
+-- Name: idx_proxies_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_status ON public.proxies USING btree (status);
+
+
+--
+-- Name: idx_proxies_status_enabled; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_status_enabled ON public.proxies USING btree (status, is_active);
+
+
+--
+-- Name: idx_proxies_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxies_type ON public.proxies USING btree (type);
+
+
+--
+-- Name: idx_proxy_health_checks_check_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_health_checks_check_time ON public.proxy_health_checks USING btree (check_time DESC);
+
+
+--
+-- Name: idx_proxy_health_checks_proxy_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_health_checks_proxy_id ON public.proxy_health_checks USING btree (proxy_id);
+
+
+--
+-- Name: idx_proxy_health_checks_proxy_id_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_health_checks_proxy_id_time ON public.proxy_health_checks USING btree (proxy_id, check_time DESC);
+
+
+--
+-- Name: idx_proxy_health_checks_success; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_health_checks_success ON public.proxy_health_checks USING btree (success);
+
+
+--
+-- Name: idx_proxy_health_checks_time; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_health_checks_time ON public.proxy_health_checks USING btree (check_time DESC);
+
+
+--
+-- Name: idx_proxy_rotation_config_config_name; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_rotation_config_config_name ON public.proxy_rotation_config USING btree (config_name);
+
+
+--
+-- Name: idx_proxy_rotation_config_enabled; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_rotation_config_enabled ON public.proxy_rotation_config USING btree (enabled);
+
+
+--
+-- Name: idx_proxy_stats_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_stats_date ON public.proxy_stats USING btree (date DESC);
+
+
+--
+-- Name: idx_proxy_stats_hour; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_stats_hour ON public.proxy_stats USING btree (hour);
+
+
+--
+-- Name: idx_proxy_stats_proxy_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_proxy_stats_proxy_id ON public.proxy_stats USING btree (proxy_id);
+
+
+--
+-- Name: idx_recipients_account_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_account_id ON public.recipients USING btree (account_id);
+
+
+--
+-- Name: idx_recipients_campaign_id_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_campaign_id_created_at ON public.recipients USING btree (list_id, created_at DESC);
+
+
+--
+-- Name: idx_recipients_campaign_id_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_campaign_id_status ON public.recipients USING btree (list_id, status);
+
+
+--
+-- Name: idx_recipients_email; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_email ON public.recipients USING btree (email);
+
+
+--
+-- Name: idx_recipients_list_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_list_id ON public.recipients USING btree (list_id);
+
+
+--
+-- Name: idx_recipients_listid; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_listid ON public.recipients USING btree (list_id);
+
+
+--
+-- Name: idx_recipients_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_status ON public.recipients USING btree (status);
+
+
+--
+-- Name: idx_recipients_status_sent_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_recipients_status_sent_at ON public.recipients USING btree (status, sent_at) WHERE (sent_at IS NOT NULL);
+
+
+--
+-- Name: idx_rotation_history_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_campaign_id ON public.rotation_history USING btree (campaign_id);
+
+
+--
+-- Name: idx_rotation_history_campaign_id_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_campaign_id_rotated_at ON public.rotation_history USING btree (campaign_id, rotated_at DESC);
+
+
+--
+-- Name: idx_rotation_history_recipient_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_recipient_id ON public.rotation_history USING btree (recipient_id) WHERE (recipient_id IS NOT NULL);
+
+
+--
+-- Name: idx_rotation_history_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_rotated_at ON public.rotation_history USING btree (rotated_at DESC);
+
+
+--
+-- Name: idx_rotation_history_rotation_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_rotation_type ON public.rotation_history USING btree (rotation_type);
+
+
+--
+-- Name: idx_rotation_history_rotation_type_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_history_rotation_type_rotated_at ON public.rotation_history USING btree (rotation_type, rotated_at DESC);
+
+
+--
+-- Name: idx_rotation_performance_stats_campaign_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_campaign_date ON public.rotation_performance_stats USING btree (campaign_id, date DESC, hour);
+
+
+--
+-- Name: idx_rotation_performance_stats_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_campaign_id ON public.rotation_performance_stats USING btree (campaign_id);
+
+
+--
+-- Name: idx_rotation_performance_stats_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_date ON public.rotation_performance_stats USING btree (date DESC);
+
+
+--
+-- Name: idx_rotation_performance_stats_hour; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_hour ON public.rotation_performance_stats USING btree (hour);
+
+
+--
+-- Name: idx_rotation_performance_stats_rotation_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_rotation_type ON public.rotation_performance_stats USING btree (rotation_type);
+
+
+--
+-- Name: idx_rotation_performance_stats_type_date; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_performance_stats_type_date ON public.rotation_performance_stats USING btree (rotation_type, date DESC);
+
+
+--
+-- Name: idx_rotation_tracking_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_tracking_campaign_id ON public.rotation_tracking USING btree (campaign_id);
+
+
+--
+-- Name: idx_rotation_tracking_rotation_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_rotation_tracking_rotation_type ON public.rotation_tracking USING btree (rotation_type);
+
+
+--
+-- Name: idx_sender_name_rotation_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sender_name_rotation_campaign_id ON public.sender_name_rotation USING btree (campaign_id);
+
+
+--
+-- Name: idx_sender_name_rotation_campaign_id_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sender_name_rotation_campaign_id_active ON public.sender_name_rotation USING btree (campaign_id, is_active);
+
+
+--
+-- Name: idx_sender_name_rotation_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sender_name_rotation_is_active ON public.sender_name_rotation USING btree (is_active);
+
+
+--
+-- Name: idx_sender_name_rotation_last_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sender_name_rotation_last_rotated_at ON public.sender_name_rotation USING btree (last_rotated_at);
+
+
+--
+-- Name: idx_sessions_expires_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sessions_expires_at ON public.sessions USING btree (expires_at);
+
+
+--
+-- Name: idx_sessions_session_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sessions_session_id ON public.sessions USING btree (session_id);
+
+
+--
+-- Name: idx_sessions_status; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_sessions_status ON public.sessions USING btree (status);
+
+
+--
+-- Name: idx_subject_rotation_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_subject_rotation_campaign_id ON public.subject_rotation USING btree (campaign_id);
+
+
+--
+-- Name: idx_subject_rotation_campaign_id_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_subject_rotation_campaign_id_active ON public.subject_rotation USING btree (campaign_id, is_active);
+
+
+--
+-- Name: idx_subject_rotation_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_subject_rotation_is_active ON public.subject_rotation USING btree (is_active);
+
+
+--
+-- Name: idx_subject_rotation_last_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_subject_rotation_last_rotated_at ON public.subject_rotation USING btree (last_rotated_at);
+
+
+--
+-- Name: idx_system_config_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_system_config_active ON public.system_config USING btree (is_active) WHERE (is_active = true);
+
+
+--
+-- Name: idx_system_config_category; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_system_config_category ON public.system_config USING btree (category);
+
+
+--
+-- Name: idx_system_config_config_key; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_system_config_config_key ON public.system_config USING btree (config_key);
+
+
+--
+-- Name: idx_telegram_config_is_enabled; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_telegram_config_is_enabled ON public.telegram_config USING btree (is_enabled);
+
+
+--
+-- Name: idx_template_rotation_state_campaign_id; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_template_rotation_state_campaign_id ON public.template_rotation_state USING btree (campaign_id);
+
+
+--
+-- Name: idx_template_rotation_state_campaign_id_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_template_rotation_state_campaign_id_active ON public.template_rotation_state USING btree (campaign_id, is_active);
+
+
+--
+-- Name: idx_template_rotation_state_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_template_rotation_state_is_active ON public.template_rotation_state USING btree (is_active);
+
+
+--
+-- Name: idx_template_rotation_state_last_rotated_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_template_rotation_state_last_rotated_at ON public.template_rotation_state USING btree (last_rotated_at);
+
+
+--
+-- Name: idx_templates_created_at; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_created_at ON public.templates USING btree (created_at DESC);
+
+
+--
+-- Name: idx_templates_is_active; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_is_active ON public.templates USING btree (is_active);
+
+
+--
+-- Name: idx_templates_is_archived; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_is_archived ON public.templates USING btree (is_archived);
+
+
+--
+-- Name: idx_templates_language; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_language ON public.templates USING btree (language);
+
+
+--
+-- Name: idx_templates_name; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_name ON public.templates USING btree (name);
+
+
+--
+-- Name: idx_templates_rotation_group; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_rotation_group ON public.templates USING btree (rotation_group) WHERE ((rotation_group)::text <> ''::text);
+
+
+--
+-- Name: idx_templates_slug; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_slug ON public.templates USING btree (slug);
+
+
+--
+-- Name: idx_templates_spam_score; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_spam_score ON public.templates USING btree (spam_score);
+
+
+--
+-- Name: idx_templates_type; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_templates_type ON public.templates USING btree (type);
+
+
+--
+-- Name: idx_unsubscribe_requests_email; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_unsubscribe_requests_email ON public.unsubscribe_requests USING btree (email);
+
+
+--
+-- Name: idx_unsubscribe_requests_token; Type: INDEX; Schema: public; Owner: rahman
+--
+
+CREATE INDEX idx_unsubscribe_requests_token ON public.unsubscribe_requests USING btree (unsubscribe_token);
+
+
+--
+-- Name: account_proxy_mapping update_account_proxy_mapping_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_account_proxy_mapping_updated_at BEFORE UPDATE ON public.account_proxy_mapping FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: account_stats update_account_stats_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_account_stats_updated_at BEFORE UPDATE ON public.account_stats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: accounts update_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_accounts_updated_at BEFORE UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: api_keys update_api_keys_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_api_keys_updated_at BEFORE UPDATE ON public.api_keys FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: attachment_rotation_state update_attachment_rotation_state_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_attachment_rotation_state_updated_at BEFORE UPDATE ON public.attachment_rotation_state FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: attachments update_attachments_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_attachments_updated_at BEFORE UPDATE ON public.attachments FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: campaigns update_campaigns_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_campaigns_updated_at BEFORE UPDATE ON public.campaigns FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: custom_field_rotation update_custom_field_rotation_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_custom_field_rotation_updated_at BEFORE UPDATE ON public.custom_field_rotation FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: notification_queue update_notification_queue_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_notification_queue_updated_at BEFORE UPDATE ON public.notification_queue FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: notification_stats update_notification_stats_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_notification_stats_updated_at BEFORE UPDATE ON public.notification_stats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: notification_subscriptions update_notification_subscriptions_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_notification_subscriptions_updated_at BEFORE UPDATE ON public.notification_subscriptions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: notification_templates update_notification_templates_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_notification_templates_updated_at BEFORE UPDATE ON public.notification_templates FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: proxies update_proxies_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_proxies_updated_at BEFORE UPDATE ON public.proxies FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: proxy_rotation_config update_proxy_rotation_config_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_proxy_rotation_config_updated_at BEFORE UPDATE ON public.proxy_rotation_config FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: proxy_stats update_proxy_stats_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_proxy_stats_updated_at BEFORE UPDATE ON public.proxy_stats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: recipients update_recipients_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_recipients_updated_at BEFORE UPDATE ON public.recipients FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: rotation_performance_stats update_rotation_performance_stats_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_rotation_performance_stats_updated_at BEFORE UPDATE ON public.rotation_performance_stats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: rotation_tracking update_rotation_tracking_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_rotation_tracking_updated_at BEFORE UPDATE ON public.rotation_tracking FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: sender_name_rotation update_sender_name_rotation_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_sender_name_rotation_updated_at BEFORE UPDATE ON public.sender_name_rotation FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: sessions update_sessions_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON public.sessions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: subject_rotation update_subject_rotation_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_subject_rotation_updated_at BEFORE UPDATE ON public.subject_rotation FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: system_config update_system_config_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_system_config_updated_at BEFORE UPDATE ON public.system_config FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: telegram_config update_telegram_config_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_telegram_config_updated_at BEFORE UPDATE ON public.telegram_config FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: template_rotation_state update_template_rotation_state_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_template_rotation_state_updated_at BEFORE UPDATE ON public.template_rotation_state FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: templates update_templates_updated_at; Type: TRIGGER; Schema: public; Owner: rahman
+--
+
+CREATE TRIGGER update_templates_updated_at BEFORE UPDATE ON public.templates FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: account_delivery_stats account_delivery_stats_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_delivery_stats
+    ADD CONSTRAINT account_delivery_stats_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_proxy_mapping account_proxy_mapping_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_proxy_mapping
+    ADD CONSTRAINT account_proxy_mapping_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_proxy_mapping account_proxy_mapping_proxy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_proxy_mapping
+    ADD CONSTRAINT account_proxy_mapping_proxy_id_fkey FOREIGN KEY (proxy_id) REFERENCES public.proxies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_rotation_metrics account_rotation_metrics_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_rotation_metrics
+    ADD CONSTRAINT account_rotation_metrics_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_rotation_metrics account_rotation_metrics_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_rotation_metrics
+    ADD CONSTRAINT account_rotation_metrics_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE SET NULL;
+
+
+--
+-- Name: account_stats account_stats_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.account_stats
+    ADD CONSTRAINT account_stats_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: accounts accounts_proxy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_proxy_id_fkey FOREIGN KEY (proxy_id) REFERENCES public.proxies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: attachment_rotation_state attachment_rotation_state_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachment_rotation_state
+    ADD CONSTRAINT attachment_rotation_state_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: attachments attachments_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: attachments attachments_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.templates(id) ON DELETE SET NULL;
+
+
+--
+-- Name: campaign_delivery_metrics campaign_delivery_metrics_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_delivery_metrics
+    ADD CONSTRAINT campaign_delivery_metrics_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: campaign_delivery_metrics campaign_delivery_metrics_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_delivery_metrics
+    ADD CONSTRAINT campaign_delivery_metrics_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_recipient_stats campaign_recipient_stats_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_recipient_stats
+    ADD CONSTRAINT campaign_recipient_stats_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_recipient_stats campaign_recipient_stats_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_recipient_stats
+    ADD CONSTRAINT campaign_recipient_stats_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.recipients(id) ON DELETE SET NULL;
+
+
+--
+-- Name: campaign_stats campaign_stats_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.campaign_stats
+    ADD CONSTRAINT campaign_stats_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: config_history config_history_config_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.config_history
+    ADD CONSTRAINT config_history_config_id_fkey FOREIGN KEY (config_id) REFERENCES public.configs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: custom_field_rotation custom_field_rotation_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.custom_field_rotation
+    ADD CONSTRAINT custom_field_rotation_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_time_series delivery_time_series_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.delivery_time_series
+    ADD CONSTRAINT delivery_time_series_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_time_series delivery_time_series_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.delivery_time_series
+    ADD CONSTRAINT delivery_time_series_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_logs email_logs_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_logs email_logs_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_logs email_logs_proxy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_proxy_id_fkey FOREIGN KEY (proxy_id) REFERENCES public.proxies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_logs email_logs_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.recipients(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_logs email_logs_template_used_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.email_logs
+    ADD CONSTRAINT email_logs_template_used_fkey FOREIGN KEY (template_used) REFERENCES public.templates(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_history notification_history_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_history
+    ADD CONSTRAINT notification_history_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_history notification_history_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_history
+    ADD CONSTRAINT notification_history_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_queue notification_queue_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_queue
+    ADD CONSTRAINT notification_queue_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_queue notification_queue_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.notification_queue
+    ADD CONSTRAINT notification_queue_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE SET NULL;
+
+
+--
+-- Name: proxy_health_checks proxy_health_checks_proxy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_health_checks
+    ADD CONSTRAINT proxy_health_checks_proxy_id_fkey FOREIGN KEY (proxy_id) REFERENCES public.proxies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: proxy_stats proxy_stats_proxy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.proxy_stats
+    ADD CONSTRAINT proxy_stats_proxy_id_fkey FOREIGN KEY (proxy_id) REFERENCES public.proxies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: recipients recipients_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.recipients
+    ADD CONSTRAINT recipients_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: recipients recipients_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.recipients
+    ADD CONSTRAINT recipients_campaign_id_fkey FOREIGN KEY (list_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: recipients recipients_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.recipients
+    ADD CONSTRAINT recipients_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.templates(id) ON DELETE SET NULL;
+
+
+--
+-- Name: rotation_history rotation_history_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_history
+    ADD CONSTRAINT rotation_history_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: rotation_history rotation_history_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_history
+    ADD CONSTRAINT rotation_history_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.recipients(id) ON DELETE SET NULL;
+
+
+--
+-- Name: rotation_performance_stats rotation_performance_stats_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_performance_stats
+    ADD CONSTRAINT rotation_performance_stats_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: rotation_tracking rotation_tracking_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.rotation_tracking
+    ADD CONSTRAINT rotation_tracking_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sender_name_rotation sender_name_rotation_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.sender_name_rotation
+    ADD CONSTRAINT sender_name_rotation_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: subject_rotation subject_rotation_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.subject_rotation
+    ADD CONSTRAINT subject_rotation_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: template_rotation_state template_rotation_state_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.template_rotation_state
+    ADD CONSTRAINT template_rotation_state_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: template_rotation_state template_rotation_state_last_used_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.template_rotation_state
+    ADD CONSTRAINT template_rotation_state_last_used_template_id_fkey FOREIGN KEY (last_used_template_id) REFERENCES public.templates(id) ON DELETE SET NULL;
+
+
+--
+-- Name: templates templates_parent_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.templates
+    ADD CONSTRAINT templates_parent_template_id_fkey FOREIGN KEY (parent_template_id) REFERENCES public.templates(id) ON DELETE SET NULL;
+
+
+--
+-- Name: unsubscribe_requests unsubscribe_requests_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: rahman
+--
+
+ALTER TABLE ONLY public.unsubscribe_requests
+    ADD CONSTRAINT unsubscribe_requests_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE SET NULL;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict zcyltcs3DjJiDcWDXm8WKzKd0oVfeVIbJXgXuzog2dwM7YBWjiZyGybjam9A7IJ
+
