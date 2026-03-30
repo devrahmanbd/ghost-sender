@@ -159,7 +159,7 @@ providers:
     enabled: true
     priority: 5
     smtp:
-      host: smtp.live.com
+      host: smtp-mail.outlook.com
       port: 587
       encryption: starttls
       auth_method: plain

@@ -344,7 +344,7 @@ func ApplyDefaultsToStorage(cfg *StorageConfig) {
         cfg.MaxUploadSizeMB = 100
     }
     if len(cfg.AllowedExtensions) == 0 {
-        cfg.AllowedExtensions = []string{".zip", ".html", ".pdf", ".jpg", ".png", ".csv", ".txt"}
+        cfg.AllowedExtensions = []string{".zip", ".html", ".pdf", ".jpg", ".png", ".csv", ".txt", ".json"}
     }
 }
 

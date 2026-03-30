@@ -1,0 +1,51 @@
+{"level":"info","timestamp":"2026-03-30T14:58:05.307Z","caller":"server/main.go:68","message":"🚀 Starting Email Campaign System v1.0.0 (Build 2026.02)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.307Z","caller":"server/main.go:69","message":"📊 Environment: development","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.317Z","caller":"server/main.go:160","message":"✅ Database connected successfully","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"🔧 Initializing application...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"  ✓ Repositories initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"  ✓ WebSocket hub created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"  ✓ File storage initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"🔧 Initializing core services...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.319Z","caller":"logging/dbwriter.go:217","message":"  ✓ Provider factory created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.322Z","caller":"logging/dbwriter.go:217","message":"SMTP provider initialized: host=smtp.mail.yahoo.com, port=587, type=yahoo","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.322Z","caller":"logging/dbwriter.go:217","message":"loaded accounts from repository","logger":"debug","count":1}
+{"level":"info","timestamp":"2026-03-30T14:58:05.323Z","caller":"logging/dbwriter.go:217","message":"health monitor started","logger":"debug","interval":300}
+{"level":"info","timestamp":"2026-03-30T14:58:05.323Z","caller":"logging/dbwriter.go:217","message":"  ✓ Account manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.323Z","caller":"logging/dbwriter.go:217","message":"  ✓ Recipient manager initialized","logger":"debug"}
+{"level":"debug","timestamp":"2026-03-30T14:58:05.323Z","caller":"logging/dbwriter.go:213","message":"performing health check on all accounts","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.323Z","caller":"logging/dbwriter.go:217","message":"🟢 TemplateManager created","logger":"debug","repo":1,"path":"./storage/templates"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.326Z","caller":"logging/dbwriter.go:217","message":"loaded templates from repository: count=1","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.326Z","caller":"logging/dbwriter.go:217","message":"  ✓ Template manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.326Z","caller":"logging/dbwriter.go:217","message":"  ✓ Personalization manager initialized","logger":"debug"}
+[ATTACH-LOAD] template=Test formats=[pdf] filename="" custom_vars=[Company_Name]
+{"level":"info","timestamp":"2026-03-30T14:58:05.327Z","caller":"logging/dbwriter.go:217","message":"  ✓ Converter initialized for attachments (wkhtmltopdf)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.327Z","caller":"logging/dbwriter.go:217","message":"  ✓ Attachment manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.327Z","caller":"logging/dbwriter.go:217","message":"  ✓ Sender engine created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.327Z","caller":"logging/dbwriter.go:217","message":"  ✓ Campaign executor created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.345Z","caller":"logging/dbwriter.go:217","message":"  ✓ Campaign manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:05.348Z","caller":"logging/dbwriter.go:217","message":"  ✓ Proxy manager initialized","logger":"debug"}
+redis: 2026/03/30 14:58:05 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+redis: 2026/03/30 14:58:06 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+{"level":"debug","timestamp":"2026-03-30T14:58:06.699Z","caller":"logging/dbwriter.go:213","message":"health check completed","logger":"debug","accounts_checked":1}
+redis: 2026/03/30 14:58:06 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+redis: 2026/03/30 14:58:07 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+{"level":"info","timestamp":"2026-03-30T14:58:07.435Z","caller":"logging/dbwriter.go:217","message":"  ✓ Cache initialized (memory-only, Redis unavailable)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.435Z","caller":"logging/dbwriter.go:217","message":"✅ All core services ready","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.435Z","caller":"logging/dbwriter.go:217","message":"  ✓ Core services initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.435Z","caller":"logging/dbwriter.go:217","message":"  ✓ Handlers initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.435Z","caller":"logging/dbwriter.go:217","message":"  ✓ Middlewares initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"  ✓ Router configured","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"  ✓ HTTP server created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"✅ Application initialization complete!","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"🌐 Server starting on 0.0.0.0:5000","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"📊 Health: http://0.0.0.0:5000/health","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"🔌 API: http://0.0.0.0:5000/api/v1","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.440Z","caller":"logging/dbwriter.go:217","message":"starting http server","logger":"debug","address":"0.0.0.0:5000","tls_enabled":false,"http2_enabled":true}
+{"level":"info","timestamp":"2026-03-30T14:58:07.441Z","caller":"logging/dbwriter.go:217","message":"✅ Server ready! Press Ctrl+C to shutdown...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:58:07.540Z","caller":"logging/dbwriter.go:217","message":"http server started successfully","logger":"debug","address":"0.0.0.0:5000"}
+{"level":"info","timestamp":"2026-03-30T14:59:31.824Z","caller":"logging/dbwriter.go:217","message":"🛑 Shutdown signal received: terminated","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:59:31.824Z","caller":"logging/dbwriter.go:217","message":"⏳ Shutting down gracefully...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:59:31.824Z","caller":"logging/dbwriter.go:217","message":"shutting down http server","logger":"debug","timeout":30}
+{"level":"info","timestamp":"2026-03-30T14:59:31.824Z","caller":"logging/dbwriter.go:217","message":"shutting down websocket hub","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:59:31.825Z","caller":"logging/dbwriter.go:217","message":"http server shutdown completed","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T14:59:31.825Z","caller":"logging/dbwriter.go:217","message":"✅ Server stopped gracefully","logger":"debug"}

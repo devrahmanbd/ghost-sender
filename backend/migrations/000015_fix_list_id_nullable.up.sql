@@ -1,0 +1,1 @@
+ALTER TABLE recipients ALTER COLUMN list_id DROP NOT NULL;

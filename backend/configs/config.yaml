@@ -8,7 +8,7 @@ app:
 
 server:
   host: "0.0.0.0"
-  port: 8080
+  port: 5000
   mode: "debug"
   read_timeout: 30s
   write_timeout: 30s
@@ -56,8 +56,11 @@ logging:
   enable_debug_log: true
   enable_failed_log: true
 security:
-  enable_auth: false
+  enable_auth: true
   api_key: "2d5a5061-07df-4ca6-96df-cc0160261ce6"
   enable_api_key: false
   encryption_key: "Te0vKvqalDWdfIZCn5M5SMPlfGopiJ87Lnzzux9oJbs="
   enable_encryption: true
+  admin_username: "admin"
+  admin_password: "admin123"
+  max_concurrent_campaigns: 5

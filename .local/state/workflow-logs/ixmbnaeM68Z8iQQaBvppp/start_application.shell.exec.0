@@ -1,0 +1,49 @@
+{"level":"info","timestamp":"2026-03-30T13:27:03.601Z","caller":"server/main.go:68","message":"🚀 Starting Email Campaign System v1.0.0 (Build 2026.02)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.601Z","caller":"server/main.go:69","message":"📊 Environment: development","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.612Z","caller":"server/main.go:160","message":"✅ Database connected successfully","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.613Z","caller":"logging/dbwriter.go:217","message":"🔧 Initializing application...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.614Z","caller":"logging/dbwriter.go:217","message":"  ✓ Repositories initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.614Z","caller":"logging/dbwriter.go:217","message":"  ✓ WebSocket hub created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.614Z","caller":"logging/dbwriter.go:217","message":"  ✓ File storage initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.614Z","caller":"logging/dbwriter.go:217","message":"🔧 Initializing core services...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.614Z","caller":"logging/dbwriter.go:217","message":"  ✓ Provider factory created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"SMTP provider initialized: host=smtp.mail.yahoo.com, port=587, type=yahoo","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"loaded accounts from repository","logger":"debug","count":1}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"health monitor started","logger":"debug","interval":300}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"  ✓ Account manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"  ✓ Recipient manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:217","message":"🟢 TemplateManager created","logger":"debug","repo":1,"path":"./storage/templates"}
+{"level":"debug","timestamp":"2026-03-30T13:27:03.617Z","caller":"logging/dbwriter.go:213","message":"performing health check on all accounts","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"loaded templates from repository: count=1","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Template manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Personalization manager initialized","logger":"debug"}
+[ATTACH-LOAD] template=Test formats=[pdf] filename="" custom_vars=[Company_Name]
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Converter initialized for attachments (wkhtmltopdf)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Attachment manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Sender engine created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.620Z","caller":"logging/dbwriter.go:217","message":"  ✓ Campaign executor created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.634Z","caller":"logging/dbwriter.go:217","message":"  ✓ Campaign manager initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:03.636Z","caller":"logging/dbwriter.go:217","message":"  ✓ Proxy manager initialized","logger":"debug"}
+redis: 2026/03/30 13:27:04 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+redis: 2026/03/30 13:27:04 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+{"level":"debug","timestamp":"2026-03-30T13:27:04.946Z","caller":"logging/dbwriter.go:213","message":"health check completed","logger":"debug","accounts_checked":1}
+redis: 2026/03/30 13:27:05 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+redis: 2026/03/30 13:27:05 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connect: connection refused
+{"level":"info","timestamp":"2026-03-30T13:27:05.720Z","caller":"logging/dbwriter.go:217","message":"  ✓ Cache initialized (memory-only, Redis unavailable)","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.720Z","caller":"logging/dbwriter.go:217","message":"✅ All core services ready","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.720Z","caller":"logging/dbwriter.go:217","message":"  ✓ Core services initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.720Z","caller":"logging/dbwriter.go:217","message":"  ✓ Handlers initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.720Z","caller":"logging/dbwriter.go:217","message":"  ✓ Middlewares initialized","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"  ✓ Router configured","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"  ✓ HTTP server created","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"✅ Application initialization complete!","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"🌐 Server starting on 0.0.0.0:5000","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"📊 Health: http://0.0.0.0:5000/health","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"🔌 API: http://0.0.0.0:5000/api/v1","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"✅ Server ready! Press Ctrl+C to shutdown...","logger":"debug"}
+{"level":"info","timestamp":"2026-03-30T13:27:05.722Z","caller":"logging/dbwriter.go:217","message":"starting http server","logger":"debug","address":"0.0.0.0:5000","tls_enabled":false,"http2_enabled":true}
+{"level":"info","timestamp":"2026-03-30T13:27:05.823Z","caller":"logging/dbwriter.go:217","message":"http server started successfully","logger":"debug","address":"0.0.0.0:5000"}
+{"level":"info","timestamp":"2026-03-30T13:27:12.781Z","caller":"logging/dbwriter.go:217","message":"HTTP request","logger":"debug","request_id":"d439fe712e09c5a763d8d45010f9b87f","remote_ip":"::1","method":"GET","path":"/","query":"","status":200,"bytes":131693,"duration_ms":301,"user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36","referer":"","req_headers":{"Accept":["text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"],"Accept-Encoding":["gzip, deflate, br, zstd"],"Accept-Language":["en-US,en;q=0.9"],"Connection":["keep-alive"],"Sec-Ch-Ua":["\"Not=A?Brand\";v=\"24\", \"Chromium\";v=\"140\""],"Sec-Ch-Ua-Mobile":["?0"],"Sec-Ch-Ua-Platform":["\"Linux\""],"Sec-Fetch-Dest":["document"],"Sec-Fetch-Mode":["navigate"],"Sec-Fetch-Site":["none"],"Sec-Fetch-User":["?1"],"Upgrade-Insecure-Requests":["1"],"User-Agent":["Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"]},"resp_headers":{"Accept-Ranges":["bytes"],"Content-Length":["131693"],"Content-Type":["text/html; charset=utf-8"],"Last-Modified":["Sun, 29 Mar 2026 21:11:24 GMT"],"X-Request-Id":["d439fe712e09c5a763d8d45010f9b87f"]}}
+{"level":"info","timestamp":"2026-03-30T13:27:13.240Z","caller":"logging/dbwriter.go:217","message":"HTTP request","logger":"debug","request_id":"f0af76a68eb84d782463b98361c5b049","remote_ip":"::1","method":"GET","path":"/favicon.ico","query":"","status":200,"bytes":131693,"duration_ms":0,"user_agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36","referer":"http://localhost:5000/","req_headers":{"Accept":["image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"],"Accept-Encoding":["gzip, deflate, br, zstd"],"Accept-Language":["en-US,en;q=0.9"],"Connection":["keep-alive"],"Referer":["http://localhost:5000/"],"Sec-Ch-Ua":["\"Not=A?Brand\";v=\"24\", \"Chromium\";v=\"140\""],"Sec-Ch-Ua-Mobile":["?0"],"Sec-Ch-Ua-Platform":["\"Linux\""],"Sec-Fetch-Dest":["image"],"Sec-Fetch-Mode":["no-cors"],"Sec-Fetch-Site":["same-origin"],"User-Agent":["Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"]},"resp_headers":{"Accept-Ranges":["bytes"],"Content-Length":["131693"],"Content-Type":["text/html; charset=utf-8"],"Last-Modified":["Sun, 29 Mar 2026 21:11:24 GMT"],"X-Request-Id":["f0af76a68eb84d782463b98361c5b049"]}}
+{"level":"debug","timestamp":"2026-03-30T13:32:03.618Z","caller":"logging/dbwriter.go:213","message":"performing health check on all accounts","logger":"debug"}
+{"level":"debug","timestamp":"2026-03-30T13:32:04.876Z","caller":"logging/dbwriter.go:213","message":"health check completed","logger":"debug","accounts_checked":1}

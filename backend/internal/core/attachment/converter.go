@@ -13,6 +13,7 @@ import (
     "sync"
     "time"
 
+    "github.com/chai2010/webp"
     "github.com/chromedp/cdproto/page"
     "github.com/chromedp/chromedp"
 )
@@ -116,6 +117,8 @@ func NewMultiConverter(cfg *ConverterConfig) (*MultiConverter, error) {
 
 func (mc *MultiConverter) createBackend(backend Backend) (Converter, error) {
     switch backend {
+    case BackendNative:
+        return NewNativeConverter(mc.config)
     case BackendChromedp:
         return NewChromedpConverter(mc.config)
     case BackendWkhtmltopdf:
@@ -263,7 +266,7 @@ func (cc *ChromedpConverter) Convert(req *ConversionRequest) ([]byte, error) {
     switch req.Format {
     case FormatPDF:
         return cc.convertToPDF(browserCtx, req)
-    case FormatJPG, FormatPNG:  // ← REMOVED WebP support (no encoder available)
+    case FormatJPG, FormatPNG, FormatWebP:
         return cc.convertToImage(browserCtx, req)
     default:
         return nil, ErrFormatNotSupported
@@ -357,8 +360,10 @@ func (cc *ChromedpConverter) convertImageFormat(data []byte, format Format, qual
         err = jpeg.Encode(tmpFile, img, &jpeg.Options{Quality: quality})
     case FormatPNG:
         err = png.Encode(tmpFile, img)
+    case FormatWebP:
+        err = webp.Encode(tmpFile, img, &webp.Options{Quality: float32(quality)})
     default:
-        return nil, ErrFormatNotSupported  // ← REMOVED WebP encoding
+        return nil, ErrFormatNotSupported
     }
 
     if err != nil {
@@ -486,6 +491,8 @@ func ParseFormat(s string) (Format, error) {
         return FormatHEIC, nil
     case "heif":
         return FormatHEIF, nil
+    case "html", "htm":
+        return FormatHTML, nil
     default:
         return "", fmt.Errorf("%w: %s", ErrFormatNotSupported, s)
     }
@@ -505,6 +512,8 @@ func GetMIMEType(format Format) string {
         return "image/heic"
     case FormatHEIF:
         return "image/heif"
+    case FormatHTML:
+        return "text/html"
     default:
         return "application/octet-stream"
     }
@@ -524,6 +533,8 @@ func GetFileExtension(format Format) string {
         return ".heic"
     case FormatHEIF:
         return ".heif"
+    case FormatHTML:
+        return ".html"
     default:
         return ".dat"
     }

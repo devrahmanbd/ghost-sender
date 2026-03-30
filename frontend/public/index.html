@@ -1,0 +1,2181 @@
+<!DOCTYPE html>
+<html lang="en" x-data="app()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Campaign Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        [x-cloak] { display: none !important; }
+        .sidebar-link.active { background-color: rgba(99,102,241,0.15); color: #818cf8; }
+        .stat-card { transition: transform 0.15s; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .toast-enter { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .progress-bar { transition: width 0.5s ease-in-out; }
+        pre.log-viewer { max-height: 500px; overflow-y: auto; font-size: 0.75rem; }
+        .modal-backdrop { background: rgba(0,0,0,0.5); }
+        .chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; }
+        .chip-remove { cursor: pointer; opacity: 0.6; }
+        .chip-remove:hover { opacity: 1; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+<div x-show="!isAuthenticated" x-cloak class="min-h-screen flex items-center justify-center">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-600/20 rounded-2xl mb-4">
+                <i class="fas fa-paper-plane text-2xl text-indigo-400"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-white">Campaign Manager</h1>
+            <p class="text-sm text-gray-400 mt-1">Email Distribution System</p>
+        </div>
+        <form @submit.prevent="handleLogin()" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Username</label>
+                <input type="text" x-model="loginUsername" required
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    placeholder="Enter username">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Password</label>
+                <input type="password" x-model="loginPassword" required
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    placeholder="Enter password">
+            </div>
+            <p x-show="loginError" class="text-red-400 text-sm" x-text="loginError"></p>
+            <button type="submit" :disabled="loginLoading"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 px-4 py-3 rounded-lg text-sm font-medium transition-colors">
+                <span x-show="!loginLoading">Sign In</span>
+                <span x-show="loginLoading"><i class="fas fa-spinner fa-spin mr-2"></i>Signing in...</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="flex min-h-screen" x-cloak x-show="isAuthenticated">
+    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col fixed h-full z-30">
+        <div class="p-5 border-b border-gray-800">
+            <h1 class="text-lg font-bold text-indigo-400"><i class="fas fa-paper-plane mr-2"></i>Campaign Manager</h1>
+            <p class="text-xs text-gray-500 mt-1">Email Distribution System</p>
+        </div>
+        <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+            <template x-for="item in menuItems" :key="item.id">
+                <button @click="currentPage = item.id"
+                    :class="{'active': currentPage === item.id}"
+                    class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors">
+                    <i :class="item.icon" class="w-5 text-center"></i>
+                    <span x-text="item.label"></span>
+                </button>
+            </template>
+        </nav>
+        <div class="p-4 border-t border-gray-800 space-y-2">
+            <div class="flex items-center gap-2 text-xs text-gray-500">
+                <span class="w-2 h-2 rounded-full" :class="wsConnected ? 'bg-green-500' : 'bg-red-500'"></span>
+                <span x-text="wsConnected ? 'Connected' : 'Disconnected'"></span>
+            </div>
+            <button @click="logout()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition-colors">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Sign Out</span>
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 ml-64">
+        <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
+            <h2 class="text-lg font-semibold capitalize" x-text="currentPage.replace(/-/g, ' ')"></h2>
+            <div class="flex items-center gap-3">
+                <button @click="refreshCurrentPage()" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="p-6">
+            <!-- Dashboard -->
+            <div x-show="currentPage === 'dashboard'" x-transition>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide">Total Campaigns</p>
+                                <p class="text-2xl font-bold mt-1" x-text="dashboardStats.totalCampaigns || 0"></p>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                                <i class="fas fa-bullhorn text-indigo-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide">Active Accounts</p>
+                                <p class="text-2xl font-bold mt-1" x-text="dashboardStats.activeAccounts || 0"></p>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                                <i class="fas fa-user-check text-green-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide">Emails Sent</p>
+                                <p class="text-2xl font-bold mt-1" x-text="formatNumber(dashboardStats.emailsSent || 0)"></p>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                                <i class="fas fa-envelope text-blue-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide">Success Rate</p>
+                                <p class="text-2xl font-bold mt-1" x-text="(dashboardStats.successRate || 0).toFixed(1) + '%'"></p>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                                <i class="fas fa-chart-line text-yellow-400"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-4">Recent Campaigns</h3>
+                        <div class="space-y-3">
+                            <template x-for="c in (campaigns || []).slice(0, 5)" :key="c.id">
+                                <div class="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
+                                    <div>
+                                        <p class="text-sm font-medium" x-text="c.name"></p>
+                                        <p class="text-xs text-gray-500" x-text="formatDate(c.created_at)"></p>
+                                    </div>
+                                    <span class="px-2 py-1 rounded text-xs font-medium"
+                                        :class="statusClass(c.status)" x-text="c.status"></span>
+                                </div>
+                            </template>
+                            <p x-show="!campaigns || campaigns.length === 0" class="text-sm text-gray-500 text-center py-4">No campaigns yet</p>
+                        </div>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-4">System Metrics</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-400">CPU Usage</span>
+                                <span class="text-sm font-mono" x-text="(systemMetrics.cpu_percent || 0).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-2">
+                                <div class="bg-indigo-500 h-2 rounded-full progress-bar" :style="'width:' + (systemMetrics.cpu_percent || 0) + '%'"></div>
+                            </div>
+                            <div class="flex justify-between items-center mt-3">
+                                <span class="text-sm text-gray-400">Memory Usage</span>
+                                <span class="text-sm font-mono" x-text="(systemMetrics.memory_percent || 0).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-2">
+                                <div class="bg-green-500 h-2 rounded-full progress-bar" :style="'width:' + (systemMetrics.memory_percent || 0) + '%'"></div>
+                            </div>
+                            <div class="flex justify-between items-center mt-3">
+                                <span class="text-sm text-gray-400">Disk Usage</span>
+                                <span class="text-sm font-mono" x-text="(systemMetrics.disk_percent || 0).toFixed(1) + '%'"></span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-2">
+                                <div class="bg-yellow-500 h-2 rounded-full progress-bar" :style="'width:' + (systemMetrics.disk_percent || 0) + '%'"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Campaigns Page -->
+            <div x-show="currentPage === 'campaigns'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex gap-2">
+                        <select x-model="campaignFilter" @change="loadCampaigns()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                            <option value="">All Status</option>
+                            <option value="created">Created</option>
+                            <option value="running">Running</option>
+                            <option value="paused">Paused</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    <button @click="openCreateCampaign()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New Campaign
+                    </button>
+                </div>
+                <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-800">
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Name</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Status</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Progress</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Sent/Failed</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Created</th>
+                                <th class="text-right px-5 py-3 text-xs text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="c in campaigns" :key="c.id">
+                                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                                    <td class="px-5 py-3 text-sm font-medium" x-text="c.name"></td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs px-2 py-1 rounded font-medium" :class="statusClass(c.status)" x-text="c.status"></span>
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-24 bg-gray-800 rounded-full h-1.5">
+                                                <div class="bg-indigo-500 h-1.5 rounded-full progress-bar" :style="'width:' + (c.progress || 0) + '%'"></div>
+                                            </div>
+                                            <span class="text-xs text-gray-400" x-text="(c.progress || 0).toFixed(0) + '%'"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-5 py-3 text-sm text-gray-400" x-text="(c.sent_count || 0) + ' / ' + (c.failed_count || 0)"></td>
+                                    <td class="px-5 py-3 text-sm text-gray-400" x-text="formatDate(c.created_at)"></td>
+                                    <td class="px-5 py-3 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <button x-show="c.status === 'created'" @click="campaignAction(c.id, 'start')" class="p-1.5 rounded hover:bg-green-500/10 text-gray-500 hover:text-green-400" title="Start">
+                                                <i class="fas fa-play text-xs"></i>
+                                            </button>
+                                            <button x-show="c.status === 'running'" @click="campaignAction(c.id, 'pause')" class="p-1.5 rounded hover:bg-yellow-500/10 text-gray-500 hover:text-yellow-400" title="Pause">
+                                                <i class="fas fa-pause text-xs"></i>
+                                            </button>
+                                            <button x-show="c.status === 'paused'" @click="campaignAction(c.id, 'resume')" class="p-1.5 rounded hover:bg-blue-500/10 text-gray-500 hover:text-blue-400" title="Resume">
+                                                <i class="fas fa-play text-xs"></i>
+                                            </button>
+                                            <button x-show="c.status === 'running' || c.status === 'paused'" @click="campaignAction(c.id, 'stop')" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400" title="Stop">
+                                                <i class="fas fa-stop text-xs"></i>
+                                            </button>
+                                            <button @click="deleteCampaign(c.id)" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400" title="Delete">
+                                                <i class="fas fa-trash text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="!campaigns || campaigns.length === 0" class="text-center text-gray-500 py-8 text-sm">No campaigns found</p>
+                </div>
+            </div>
+
+            <!-- Accounts Page -->
+            <div x-show="currentPage === 'accounts'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <p class="text-sm text-gray-400" x-text="accounts.length + ' accounts'"></p>
+                    <div class="flex gap-2">
+                        <button @click="showImportAccounts = true" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-file-csv mr-2"></i>CSV Import
+                        </button>
+                        <button @click="showCreateAccount = true" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-plus mr-2"></i>Add Account
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-800">
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Email</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Provider</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Sender Name</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Status</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Sent Today</th>
+                                <th class="text-right px-5 py-3 text-xs text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="a in accounts" :key="a.id">
+                                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                                    <td class="px-5 py-3 text-sm font-medium" x-text="a.email"></td>
+                                    <td class="px-5 py-3 text-sm text-gray-400" x-text="a.provider"></td>
+                                    <td class="px-5 py-3 text-sm text-gray-400">
+                                        <span x-text="a.sender_name || '-'"></span>
+                                        <span x-show="a.sender_names && a.sender_names.length > 0" class="ml-1 text-xs text-indigo-400" x-text="'(' + a.sender_names.length + ' rotating)'"></span>
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs px-2 py-1 rounded" :class="a.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'" x-text="a.status || 'active'"></span>
+                                    </td>
+                                    <td class="px-5 py-3 text-sm text-gray-400" x-text="(a.sent_today || 0) + ' / ' + (a.daily_limit || 500)"></td>
+                                    <td class="px-5 py-3 text-right">
+                                        <button @click="deleteAccount(a.id)" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400">
+                                            <i class="fas fa-trash text-xs"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="!accounts || accounts.length === 0" class="text-center text-gray-500 py-8 text-sm">No accounts added</p>
+                </div>
+            </div>
+
+            <!-- Templates Page -->
+            <div x-show="currentPage === 'templates'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <p class="text-sm text-gray-400" x-text="templates.length + ' templates'"></p>
+                    <button @click="showCreateTemplate = true" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New Template
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <template x-for="t in templates" :key="t.id">
+                        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
+                            <div class="flex items-start justify-between mb-2">
+                                <h4 class="font-medium text-sm" x-text="t.name"></h4>
+                                <div class="flex gap-1">
+                                    <button @click="editTemplate(t)" class="p-1 rounded hover:bg-gray-800 text-gray-500 hover:text-gray-300">
+                                        <i class="fas fa-edit text-xs"></i>
+                                    </button>
+                                    <button @click="deleteTemplate(t.id)" class="p-1 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2" x-text="(t.subjects && t.subjects.length > 0) ? t.subjects.join(' | ') : (t.subject || 'No subject')"></p>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400" x-text="t.status || 'draft'"></span>
+                                <span class="text-xs text-gray-600" x-text="formatDate(t.created_at)"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p x-show="!templates || templates.length === 0" class="text-center text-gray-500 py-8 text-sm">No templates found</p>
+            </div>
+
+            <!-- Recipient Lists Page -->
+            <div x-show="currentPage === 'recipient-lists'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <p class="text-sm text-gray-400" x-text="recipientLists.length + ' lists'"></p>
+                    <button @click="showCreateList = true" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New List
+                    </button>
+                </div>
+
+                <div x-show="!selectedList" class="space-y-3">
+                    <template x-for="list in recipientLists" :key="list.id">
+                        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors cursor-pointer" @click="selectList(list)">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h4 class="font-medium text-sm" x-text="list.name"></h4>
+                                    <p class="text-xs text-gray-500 mt-1" x-text="list.description || 'No description'"></p>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="text-right">
+                                        <p class="text-lg font-bold text-indigo-400" x-text="list.recipient_count || 0"></p>
+                                        <p class="text-xs text-gray-500">recipients</p>
+                                    </div>
+                                    <button @click.stop="deleteList(list.id)" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="recipientLists.length === 0" class="text-center text-gray-500 py-8 text-sm">No recipient lists yet</p>
+                </div>
+
+                <div x-show="selectedList">
+                    <div class="flex items-center gap-4 mb-6">
+                        <button @click="selectedList = null" class="text-gray-400 hover:text-white">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <div>
+                            <h3 class="font-semibold" x-text="selectedList?.name"></h3>
+                            <p class="text-xs text-gray-500" x-text="selectedList?.description || ''"></p>
+                        </div>
+                        <div class="ml-auto flex gap-2">
+                            <button @click="showImportToList = true" class="bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg text-sm transition-colors">
+                                <i class="fas fa-file-import mr-2"></i>Import Emails
+                            </button>
+                            <button @click="showAddRecipient = true" class="bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded-lg text-sm transition-colors">
+                                <i class="fas fa-plus mr-2"></i>Add Recipient
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b border-gray-800">
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Email</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Name</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Status</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Added</th>
+                                    <th class="text-right px-5 py-3 text-xs text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="r in listRecipients" :key="r.id">
+                                    <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                                        <td class="px-5 py-3 text-sm font-medium" x-text="r.email"></td>
+                                        <td class="px-5 py-3 text-sm text-gray-400" x-text="[r.first_name, r.last_name].filter(Boolean).join(' ') || '-'"></td>
+                                        <td class="px-5 py-3">
+                                            <span class="text-xs px-2 py-1 rounded bg-gray-800 text-gray-300" x-text="r.status || 'pending'"></span>
+                                        </td>
+                                        <td class="px-5 py-3 text-sm text-gray-400" x-text="formatDate(r.created_at)"></td>
+                                        <td class="px-5 py-3 text-right">
+                                            <button @click="deleteRecipient(r.id)" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400">
+                                                <i class="fas fa-trash text-xs"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <p x-show="listRecipients.length === 0" class="text-center text-gray-500 py-8 text-sm">No recipients in this list</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attachments Page -->
+            <div x-show="currentPage === 'attachments'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <p class="text-sm text-gray-400" x-text="attachmentTemplates.length + ' attachment templates'"></p>
+                    <button @click="editingAttachment = null; newAttachment = { name: '', html_content: '', formats: ['pdf'], filename: '', custom_variables_text: '' }; showUploadAttachment = true" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New Attachment Template
+                    </button>
+                </div>
+                <div class="bg-blue-900/20 border border-blue-800/30 rounded-lg p-3 mb-4">
+                    <p class="text-xs text-blue-300"><i class="fas fa-info-circle mr-1"></i> Upload HTML templates that will be converted to attachments (PDF, JPEG, WebP, etc.) and sent with your campaign emails. Variables like {First_Name} are supported.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <template x-for="att in attachmentTemplates" :key="att.name">
+                        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
+                            <div class="flex items-start justify-between mb-2">
+                                <h4 class="font-medium text-sm" x-text="att.name"></h4>
+                                <div class="flex items-center gap-1">
+                                    <button @click="editAttachmentTemplate(att)" class="p-1 rounded hover:bg-blue-500/10 text-gray-500 hover:text-blue-400">
+                                        <i class="fas fa-edit text-xs"></i>
+                                    </button>
+                                    <button @click="deleteAttachmentTemplate(att.name)" class="p-1 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400" x-text="att.type || 'html'"></span>
+                                <span class="text-xs text-gray-600" x-text="att.size ? (att.size / 1024).toFixed(1) + ' KB' : ''"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p x-show="!attachmentTemplates || attachmentTemplates.length === 0" class="text-center text-gray-500 py-8 text-sm">No attachment templates uploaded</p>
+            </div>
+
+            <!-- Proxies Page -->
+            <div x-show="currentPage === 'proxies'" x-transition>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-4">
+                        <p class="text-sm text-gray-400" x-text="proxies.length + ' proxies'"></p>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 rounded bg-green-500/10 text-green-400" x-text="proxyStats.healthy + ' healthy'"></span>
+                            <span class="px-2 py-1 rounded bg-red-500/10 text-red-400" x-text="proxyStats.unhealthy + ' unhealthy'"></span>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="testAllProxies()" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-heartbeat mr-2"></i>Test All
+                        </button>
+                        <button @click="removeUnhealthyProxies()" class="bg-red-900/30 hover:bg-red-900/50 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-red-400">
+                            <i class="fas fa-broom mr-2"></i>Remove Unhealthy
+                        </button>
+                        <button @click="showImportProxies = true" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-file-import mr-2"></i>Bulk Import
+                        </button>
+                        <button @click="showCreateProxy = true" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-plus mr-2"></i>Add Proxy
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-800">
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Host:Port</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Type</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Auth</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Status</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Health</th>
+                                <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Last Check</th>
+                                <th class="text-right px-5 py-3 text-xs text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in proxies" :key="p.id">
+                                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                                    <td class="px-5 py-3 text-sm font-medium font-mono" x-text="p.host + ':' + p.port"></td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 uppercase" x-text="p.type"></span>
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        <span x-show="p.has_auth" class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400">Yes</span>
+                                        <span x-show="!p.has_auth" class="text-xs text-gray-600">No</span>
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs px-2 py-1 rounded" :class="p.is_active ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'" x-text="p.is_active ? 'Active' : 'Inactive'"></span>
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs px-2 py-1 rounded" :class="{
+                                            'bg-green-500/10 text-green-400': p.health_status === 'healthy',
+                                            'bg-red-500/10 text-red-400': p.health_status === 'unhealthy',
+                                            'bg-yellow-500/10 text-yellow-400': p.health_status === 'degraded',
+                                            'bg-gray-800 text-gray-400': p.health_status === 'unknown' || !p.health_status
+                                        }" x-text="p.health_status || 'unknown'"></span>
+                                        <span x-show="proxyTesting[p.id]" class="ml-1 text-xs text-gray-500"><i class="fas fa-spinner fa-spin"></i></span>
+                                    </td>
+                                    <td class="px-5 py-3 text-xs text-gray-500" x-text="p.last_checked_at ? formatDateTime(p.last_checked_at) : 'Never'"></td>
+                                    <td class="px-5 py-3 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <button @click="testSingleProxy(p.id)" class="p-1.5 rounded hover:bg-blue-500/10 text-gray-500 hover:text-blue-400" title="Test">
+                                                <i class="fas fa-heartbeat text-xs"></i>
+                                            </button>
+                                            <button @click="toggleProxyActive(p)" class="p-1.5 rounded hover:bg-yellow-500/10 text-gray-500 hover:text-yellow-400" :title="p.is_active ? 'Deactivate' : 'Activate'">
+                                                <i class="fas text-xs" :class="p.is_active ? 'fa-toggle-on' : 'fa-toggle-off'"></i>
+                                            </button>
+                                            <button @click="deleteProxy(p.id)" class="p-1.5 rounded hover:bg-red-500/10 text-gray-500 hover:text-red-400" title="Delete">
+                                                <i class="fas fa-trash text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="!proxies || proxies.length === 0" class="text-center text-gray-500 py-8 text-sm">No proxies added</p>
+                </div>
+            </div>
+
+            <!-- Logs Page -->
+            <div x-show="currentPage === 'logs'" x-transition>
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <div class="relative flex-1 min-w-[200px] max-w-md">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
+                        <input type="text" x-model="logSearch" @input.debounce.400ms="logPage=1; loadLogs()"
+                            placeholder="Search logs..."
+                            class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <select x-model="logLevel" @change="logPage=1; loadLogs()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="">All Levels</option>
+                        <option value="INFO">Info</option>
+                        <option value="WARN">Warning</option>
+                        <option value="ERROR">Error</option>
+                        <option value="DEBUG">Debug</option>
+                        <option value="FATAL">Fatal</option>
+                        <option value="SYSTEM">System</option>
+                    </select>
+                    <select x-model="logCategory" @change="logPage=1; loadLogs()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="">All Categories</option>
+                        <option value="campaign">Campaign</option>
+                        <option value="account">Account</option>
+                        <option value="sender">Sender</option>
+                        <option value="template">Template</option>
+                        <option value="recipient">Recipient</option>
+                        <option value="proxy">Proxy</option>
+                        <option value="system">System</option>
+                        <option value="notification">Notification</option>
+                        <option value="security">Security</option>
+                    </select>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none">
+                            <input type="checkbox" x-model="logAutoRefresh" @change="toggleLogAutoRefresh()" class="rounded bg-gray-800 border-gray-600 text-indigo-500 focus:ring-indigo-500">
+                            Auto-refresh
+                        </label>
+                        <button @click="exportLogs()" class="bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg text-sm transition-colors" title="Export logs">
+                            <i class="fas fa-download mr-1"></i>Export
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 mb-4 text-xs text-gray-500">
+                    <span x-text="'Total: ' + (logTotal || 0) + ' logs'"></span>
+                    <span x-show="logAutoRefresh" class="flex items-center gap-1 text-green-400">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> Live
+                    </span>
+                </div>
+
+                <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div class="max-h-[65vh] overflow-y-auto" x-ref="logContainer">
+                        <table class="w-full">
+                            <thead class="sticky top-0 bg-gray-900 z-10">
+                                <tr class="border-b border-gray-800">
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase w-44">Time</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase w-20">Level</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase w-24">Category</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase">Message</th>
+                                    <th class="text-left px-5 py-3 text-xs text-gray-500 uppercase w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="log in logs" :key="log.id || log.time">
+                                    <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer" @click="log._expanded = !log._expanded">
+                                        <td class="px-5 py-2 text-xs text-gray-500 font-mono whitespace-nowrap" x-text="formatDateTime(log.time || log.timestamp || log.created_at)"></td>
+                                        <td class="px-5 py-2">
+                                            <span class="text-xs px-2 py-0.5 rounded font-medium" :class="logLevelClass((log.level || '').toLowerCase())" x-text="log.level"></span>
+                                        </td>
+                                        <td class="px-5 py-2 text-xs text-gray-400" x-text="log.category || '-'"></td>
+                                        <td class="px-5 py-2 text-xs text-gray-300 font-mono break-all">
+                                            <div x-text="log.message"></div>
+                                            <div x-show="log._expanded && (log.error_code || log.details || log.campaign_id || log.account_id)" class="mt-2 p-2 bg-gray-800/50 rounded text-gray-400 space-y-1">
+                                                <div x-show="log.error_code"><span class="text-gray-500">Error Code:</span> <span x-text="log.error_code"></span></div>
+                                                <div x-show="log.error_class"><span class="text-gray-500">Error Class:</span> <span x-text="log.error_class"></span></div>
+                                                <div x-show="log.campaign_id"><span class="text-gray-500">Campaign:</span> <span x-text="log.campaign_id"></span></div>
+                                                <div x-show="log.account_id"><span class="text-gray-500">Account:</span> <span x-text="log.account_id"></span></div>
+                                                <div x-show="log.details"><span class="text-gray-500">Details:</span> <span x-text="JSON.stringify(log.details)"></span></div>
+                                                <div x-show="log.stack_trace" class="whitespace-pre-wrap text-red-400/70" x-text="log.stack_trace"></div>
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-2 text-xs text-gray-600">
+                                            <i class="fas" :class="log._expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <p x-show="!logs || logs.length === 0" class="text-center text-gray-500 py-8 text-sm">No logs found</p>
+                    </div>
+                </div>
+
+                <div x-show="logTotalPages > 1" class="flex items-center justify-between mt-4">
+                    <div class="text-xs text-gray-500">
+                        Page <span x-text="logPage"></span> of <span x-text="logTotalPages"></span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button @click="logPage = 1; loadLogs()" :disabled="logPage <= 1"
+                            class="px-2 py-1 text-xs rounded bg-gray-800 text-gray-400 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-angle-double-left"></i>
+                        </button>
+                        <button @click="logPage--; loadLogs()" :disabled="logPage <= 1"
+                            class="px-3 py-1 text-xs rounded bg-gray-800 text-gray-400 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-angle-left"></i> Prev
+                        </button>
+                        <button @click="logPage++; loadLogs()" :disabled="logPage >= logTotalPages"
+                            class="px-3 py-1 text-xs rounded bg-gray-800 text-gray-400 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            Next <i class="fas fa-angle-right"></i>
+                        </button>
+                        <button @click="logPage = logTotalPages; loadLogs()" :disabled="logPage >= logTotalPages"
+                            class="px-2 py-1 text-xs rounded bg-gray-800 text-gray-400 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-angle-double-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div x-show="currentPage === 'settings'" x-transition>
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                    <h3 class="text-sm font-semibold text-gray-300 mb-4">Runtime Configuration</h3>
+                    <div x-show="configData" class="space-y-2">
+                        <template x-for="(value, key) in flattenConfig(configData)" :key="key">
+                            <div class="flex items-center justify-between py-2 border-b border-gray-800/50">
+                                <span class="text-sm text-gray-400 font-mono" x-text="key"></span>
+                                <span class="text-sm text-gray-200" x-text="JSON.stringify(value)"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <p x-show="!configData" class="text-sm text-gray-500">Loading configuration...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Create Campaign Modal -->
+<div x-show="showCreateCampaign" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showCreateCampaign = false">
+        <h3 class="text-lg font-semibold mb-4">Create Campaign</h3>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Campaign Name *</label>
+                    <input x-model="newCampaign.name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="My Campaign">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Recipient List *</label>
+                    <select x-model="newCampaign.recipient_list_id" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="">Select a list...</option>
+                        <template x-for="list in recipientLists" :key="list.id">
+                            <option :value="list.id" x-text="list.name + ' (' + (list.recipient_count || 0) + ')'"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Description</label>
+                <textarea x-model="newCampaign.description" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" rows="2" placeholder="Campaign description"></textarea>
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-sm text-gray-400">Select Accounts * <span class="text-xs text-gray-600">(SMTP accounts to send from)</span></label>
+                    <button type="button" @click="newCampaign.account_ids.length === accounts.length ? newCampaign.account_ids = [] : newCampaign.account_ids = accounts.map(a => a.id)" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                        <span x-text="newCampaign.account_ids.length === accounts.length ? 'Deselect All' : 'Select All'"></span>
+                        <span class="text-gray-500 ml-1" x-text="'(' + newCampaign.account_ids.length + '/' + accounts.length + ')'"></span>
+                    </button>
+                </div>
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
+                    <template x-for="a in accounts" :key="a.id">
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-2 py-1">
+                            <input type="checkbox" :value="a.id" x-model="newCampaign.account_ids" class="rounded bg-gray-700 border-gray-600">
+                            <span class="text-sm" x-text="a.email"></span>
+                            <span class="text-xs text-gray-500" x-text="'(' + (a.sender_name || a.provider) + ')'"></span>
+                        </label>
+                    </template>
+                    <p x-show="accounts.length === 0" class="text-xs text-gray-500">No accounts available. Add accounts first.</p>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Select Templates * <span class="text-xs text-gray-600">(multiple for rotation)</span></label>
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
+                    <template x-for="t in templates" :key="t.id">
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-2 py-1">
+                            <input type="checkbox" :value="t.id" x-model="newCampaign.template_ids" class="rounded bg-gray-700 border-gray-600">
+                            <span class="text-sm" x-text="t.name"></span>
+                            <span class="text-xs text-gray-500" x-text="(t.subjects && t.subjects.length > 0) ? '- ' + t.subjects[0] : (t.subject ? '- ' + t.subject : '')"></span>
+                        </label>
+                    </template>
+                    <p x-show="templates.length === 0" class="text-xs text-gray-500">No templates available. Create templates first.</p>
+                </div>
+            </div>
+            <div class="bg-blue-900/20 border border-blue-800/30 rounded-lg p-3 mb-2">
+                <p class="text-xs text-blue-300"><i class="fas fa-info-circle mr-1"></i> Subject lines, sender names, and custom variables are configured in the Template section. SMTP account sender name overrides template sender name.</p>
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Workers</label>
+                    <input x-model.number="newCampaign.worker_count" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" min="1" max="20">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Rate Limit/min</label>
+                    <input x-model.number="newCampaign.rate_limit" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" min="1" max="100">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Daily Limit</label>
+                    <input x-model.number="newCampaign.daily_limit" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" min="0">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Attachment Templates <span class="text-xs text-gray-600">(optional - select HTML templates to convert and attach)</span></label>
+                <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-3 max-h-32 overflow-y-auto space-y-1">
+                    <template x-for="att in attachmentTemplates" :key="att.name">
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-2 py-1">
+                            <input type="checkbox" :value="att.name" x-model="newCampaign.attachment_template_ids" class="rounded bg-gray-700 border-gray-600">
+                            <span class="text-sm" x-text="att.name"></span>
+                        </label>
+                    </template>
+                    <p x-show="attachmentTemplates.length === 0" class="text-xs text-gray-500">No attachment templates. Upload them in the Attachments section.</p>
+                </div>
+            </div>
+            <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-3">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" x-model="newCampaign.use_proxy" class="rounded bg-gray-700 border-gray-600">
+                    <div>
+                        <span class="text-sm font-medium">Enable Proxy</span>
+                        <p class="text-xs text-gray-500">Route emails through proxy servers</p>
+                    </div>
+                </label>
+                <div x-show="newCampaign.use_proxy" class="mt-3">
+                    <label class="block text-sm text-gray-400 mb-1">Proxy Assignment Mode</label>
+                    <select x-model="newCampaign.proxy_mode" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="round-robin">Round Robin (rotate through all proxies)</option>
+                        <option value="per-account">Per Account (1 proxy per mail account)</option>
+                        <option value="random">Random (random proxy per email)</option>
+                    </select>
+                </div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" x-model="newCampaign.smart_sending" class="rounded bg-gray-700 border-gray-600">
+                    <div>
+                        <span class="text-sm font-medium">Smart Sending</span>
+                        <p class="text-xs text-gray-500">Route emails through matching provider (Gmail recipients via Google accounts, Yahoo via Yahoo, etc.)</p>
+                    </div>
+                </label>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showCreateCampaign = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="createCampaign()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Create Campaign</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Account Modal -->
+<div x-show="showCreateAccount" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showCreateAccount = false">
+        <h3 class="text-lg font-semibold mb-4">Add Email Account</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Email *</label>
+                <input x-model="newAccount.email" type="email" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="email@example.com">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Provider</label>
+                <select x-model="newAccount.provider" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    <option value="gmail">Gmail (smtp.gmail.com:587)</option>
+                    <option value="office365">Microsoft — Office 365 (smtp.office365.com:587)</option>
+                    <option value="outlook">Microsoft — Outlook / Hotmail / Live / MSN (smtp-mail.outlook.com:587)</option>
+                    <option value="yahoo">Yahoo (smtp.mail.yahoo.com:587)</option>
+                    <option value="icloud">iCloud (smtp.mail.me.com:587)</option>
+                    <option value="workspace">Google Workspace (smtp.gmail.com:587)</option>
+                    <option value="smtp">Custom SMTP</option>
+                </select>
+            </div>
+            <div x-show="newAccount.provider !== 'smtp'" class="p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <p class="text-xs text-gray-400">SMTP settings auto-configured for <span class="text-indigo-400 font-medium" x-text="newAccount.provider"></span>. Use an App Password for this provider.</p>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Password / App Password *</label>
+                <input x-model="newAccount.password" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="App-specific password">
+            </div>
+            <div x-show="newAccount.provider === 'smtp'" class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">SMTP Host *</label>
+                    <input x-model="newAccount.smtp_host" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="smtp.example.com">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">SMTP Port</label>
+                    <input x-model.number="newAccount.smtp_port" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="587">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Daily Limit</label>
+                <input x-model.number="newAccount.daily_limit" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="500">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Default Sender Name <span class="text-xs text-gray-500">(optional, auto-derived from rotation list)</span></label>
+                <input x-model="newAccount.sender_name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="Leave empty to use first rotation name or email">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Sender Names for Rotation <span class="text-xs text-gray-500">(one per line, unlimited)</span></label>
+                <textarea x-model="newAccount.sender_names_text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="5" placeholder="John Smith&#10;Jane Doe&#10;Support Team&#10;Marketing Dept&#10;Sales Team"></textarea>
+                <p class="text-xs text-gray-600 mt-1" x-show="newAccount.sender_names_text">
+                    <span x-text="newAccount.sender_names_text.split(/\n/).filter(s => s.trim()).length"></span> sender name(s) will rotate on each send
+                </p>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showCreateAccount = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="createAccount()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- CSV Import Accounts Modal -->
+<div x-show="showImportAccounts" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4" @click.outside="showImportAccounts = false">
+        <h3 class="text-lg font-semibold mb-4">Import Accounts from CSV</h3>
+        <div class="space-y-4">
+            <div class="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                <p class="text-xs text-gray-400 mb-2">CSV format (with header row):</p>
+                <code class="text-xs text-indigo-400">email,password,provider,sender_name,smtp_host,smtp_port</code>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Paste CSV Content</label>
+                <textarea x-model="csvAccountsText" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="8" placeholder="email,password,provider,sender_name,smtp_host,smtp_port&#10;user@example.com,pass123,smtp,John Smith,smtp.example.com,587"></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showImportAccounts = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="importAccountsCSV()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Import</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Template Modal -->
+<div x-show="showCreateTemplate" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showCreateTemplate = false">
+        <h3 class="text-lg font-semibold mb-4" x-text="editingTemplate ? 'Edit Template' : 'Create Template'"></h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Name</label>
+                <input x-model="newTemplate.name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="Template name">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Subject Lines <span class="text-xs text-gray-600">(one per line, rotated per email - supports variables like {First_Name})</span></label>
+                <textarea x-model="newTemplate.subjects_text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="3" placeholder="Welcome {First_Name} from {Company_Name}!&#10;Hey {First_Name}, check this out&#10;{First_Name}, your invitation to {City} awaits"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Sender Names <span class="text-xs text-gray-600">(one per line, rotated in lockstep with subjects and custom variables)</span></label>
+                <textarea x-model="newTemplate.sender_names_text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="3" placeholder="John Smith&#10;Jane Doe&#10;Support Team"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">HTML Content</label>
+                <textarea x-model="newTemplate.html_content" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="12" placeholder="<html>...</html>"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Custom Variables <span class="text-xs text-gray-600">(one per line: key=value1,value2,value3 — rotated sequentially)</span></label>
+                <textarea x-model="newTemplate.custom_variables_text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="3" placeholder="Company_Name=Acme Corp,Tech Inc,Global Industries&#10;First_Name=Alex,Jordan,Sam,Taylor&#10;City=New York,London,Tokyo,Sydney"></textarea>
+                <p class="text-xs text-gray-600 mt-1">Variables can be used in subject lines and HTML content using <code class="bg-gray-800 px-1 rounded">{variable_name}</code> syntax</p>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showCreateTemplate = false; editingTemplate = null" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="saveTemplate()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors" x-text="editingTemplate ? 'Save Changes' : 'Create'"></button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Recipient List Modal -->
+<div x-show="showCreateList" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showCreateList = false">
+        <h3 class="text-lg font-semibold mb-4">Create Recipient List</h3>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">List Name *</label>
+                    <input x-model="newList.name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="My Email List">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Description</label>
+                    <input x-model="newList.description" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="Optional description">
+                </div>
+            </div>
+            <hr class="border-gray-700 my-4">
+            <div>
+                <h4 class="text-sm font-medium text-gray-300 mb-3">Add Recipients (Optional)</h4>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Paste Emails <span class="text-xs text-gray-600">(one per line)</span></label>
+                        <textarea x-model="newList.emails" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="6" placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"></textarea>
+                    </div>
+                    <div class="text-center text-xs text-gray-500">— or —</div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">Upload .txt File</label>
+                        <input type="file" accept=".txt" @change="handleNewListFile" class="block text-sm text-gray-400 w-full file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showCreateList = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="createListWithRecipients()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Create List</button>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Attachment Template Modal -->
+<div x-show="showUploadAttachment" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showUploadAttachment = false">
+        <h3 class="text-lg font-semibold mb-4" x-text="editingAttachment ? 'Edit Attachment Template' : 'New Attachment Template'"></h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Template Name</label>
+                <input x-model="newAttachment.name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="invoice_template">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Output Formats <span class="text-xs text-gray-600">(select multiple for rotation)</span></label>
+                <div class="space-y-2 bg-gray-800 border border-gray-700 rounded-lg p-3">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="pdf" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('pdf')" class="accent-indigo-600">
+                        <span class="text-sm">PDF</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="jpg" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('jpg')" class="accent-indigo-600">
+                        <span class="text-sm">JPEG Image</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="png" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('png')" class="accent-indigo-600">
+                        <span class="text-sm">PNG Image</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="webp" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('webp')" class="accent-indigo-600">
+                        <span class="text-sm">WebP Image</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="heic" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('heic')" class="accent-indigo-600">
+                        <span class="text-sm">HEIC Image (Apple)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" value="heif" @change="updateAttachmentFormats" :checked="newAttachment.formats && newAttachment.formats.includes('heif')" class="accent-indigo-600">
+                        <span class="text-sm">HEIF Image</span>
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Attachment Filename <span class="text-xs text-gray-600">(optional)</span></label>
+                <input x-model="newAttachment.filename" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="e.g. invoice, report, proposal">
+                <p class="text-xs text-gray-500 mt-1">If set, attachment will be named filename.extension (e.g. invoice.pdf). Leave empty to use template name.</p>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Upload HTML File</label>
+                <input type="file" accept=".html,.htm" @change="handleAttachmentFileUpload" class="block text-sm text-gray-400 w-full file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Or paste HTML content directly</label>
+                <textarea x-model="newAttachment.html_content" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="10" placeholder="<html>&#10;  <body>&#10;    <h1>Invoice for {First_Name}</h1>&#10;    ...&#10;  </body>&#10;</html>"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Custom Variables <span class="text-xs text-gray-600">(one per line: key=value1,value2,value3)</span></label>
+                <textarea x-model="newAttachment.custom_variables_text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="3" placeholder="Company_Name=Acme Corp,Tech Inc,Global Industries&#10;First_Name=Alex,Jordan,Sam,Taylor&#10;City=New York,London,Tokyo,Sydney"></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showUploadAttachment = false; editingAttachment = null" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="saveAttachmentTemplate()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors" x-text="editingAttachment ? 'Update Template' : 'Save Template'"></button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Recipient to List Modal -->
+<div x-show="showAddRecipient" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4" @click.outside="showAddRecipient = false">
+        <h3 class="text-lg font-semibold mb-4">Add Recipient</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Email *</label>
+                <input x-model="newRecipient.email" type="email" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="recipient@example.com">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">First Name</label>
+                    <input x-model="newRecipient.first_name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="John">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Last Name</label>
+                    <input x-model="newRecipient.last_name" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="Doe">
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showAddRecipient = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="addRecipientToList()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Emails to List Modal -->
+<div x-show="showImportToList" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4" @click.outside="showImportToList = false">
+        <h3 class="text-lg font-semibold mb-4">Import Emails to List</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Paste Emails <span class="text-xs text-gray-600">(one per line)</span></label>
+                <textarea x-model="importEmailsText" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="10" placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-2">Or Upload .txt File</label>
+                <input type="file" accept=".txt" @change="handleImportFile" class="block text-sm text-gray-400 w-full file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showImportToList = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="importEmailsToList()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Import</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Proxy Modal -->
+<div x-show="showCreateProxy" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4" @click.outside="showCreateProxy = false">
+        <h3 class="text-lg font-semibold mb-4">Add Proxy</h3>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Host *</label>
+                    <input x-model="newProxy.host" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="192.168.1.1 or proxy.example.com">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Port *</label>
+                    <input x-model.number="newProxy.port" type="number" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" min="1" max="65535" placeholder="8080">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Type</label>
+                <select x-model="newProxy.type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                    <option value="socks5">SOCKS5</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Username <span class="text-xs text-gray-600">(optional)</span></label>
+                    <input x-model="newProxy.username" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="proxy_user">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Password <span class="text-xs text-gray-600">(optional)</span></label>
+                    <input x-model="newProxy.password" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="proxy_pass">
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showCreateProxy = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="createProxy()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add Proxy</button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Proxies Modal -->
+<div x-show="showImportProxies" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" x-transition>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" @click.outside="showImportProxies = false">
+        <h3 class="text-lg font-semibold mb-4">Bulk Import Proxies</h3>
+        <div class="space-y-4">
+            <div class="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                <p class="text-xs text-gray-400 mb-2">Supported formats (one per line):</p>
+                <code class="text-xs text-indigo-400 block">type://host:port</code>
+                <code class="text-xs text-indigo-400 block mt-1">type://host:port:user:pass</code>
+                <code class="text-xs text-indigo-400 block mt-1">host:port</code>
+                <code class="text-xs text-indigo-400 block mt-1">host:port:user:pass</code>
+                <p class="text-xs text-gray-500 mt-2">type can be: http, https, socks5 (defaults to http)</p>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Paste Proxy List</label>
+                <textarea x-model="importProxiesText" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono" rows="10" placeholder="http://192.168.1.1:8080&#10;socks5://10.0.0.1:1080:user:pass&#10;192.168.1.2:3128"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-2">Or Upload .txt File</label>
+                <input type="file" accept=".txt,.csv" @change="handleProxyImportFile" class="block text-sm text-gray-400 w-full file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button @click="showImportProxies = false" class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+            <button @click="importProxiesBulk()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Import</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notifications -->
+<div class="fixed bottom-4 right-4 z-50 space-y-2">
+    <template x-for="(toast, index) in toasts" :key="toast.id">
+        <div class="toast-enter flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border max-w-sm"
+            :class="toast.type === 'error' ? 'bg-red-900/90 border-red-800' : toast.type === 'success' ? 'bg-green-900/90 border-green-800' : 'bg-gray-900/90 border-gray-700'">
+            <i :class="toast.type === 'error' ? 'fas fa-exclamation-circle text-red-400' : toast.type === 'success' ? 'fas fa-check-circle text-green-400' : 'fas fa-info-circle text-blue-400'"></i>
+            <span class="text-sm" x-text="toast.message"></span>
+        </div>
+    </template>
+</div>
+
+<script>
+function app() {
+    return {
+        isAuthenticated: false,
+        authToken: null,
+        loginUsername: '',
+        loginPassword: '',
+        loginError: '',
+        loginLoading: false,
+        maxConcurrentCampaigns: 5,
+        currentPage: 'dashboard',
+        wsConnected: false,
+        ws: null,
+        toasts: [],
+        menuItems: [
+            { id: 'dashboard', label: 'Dashboard', icon: 'fas fa-tachometer-alt' },
+            { id: 'campaigns', label: 'Campaigns', icon: 'fas fa-bullhorn' },
+            { id: 'accounts', label: 'Accounts', icon: 'fas fa-user-circle' },
+            { id: 'templates', label: 'Templates', icon: 'fas fa-file-alt' },
+            { id: 'recipient-lists', label: 'Recipient Lists', icon: 'fas fa-list' },
+            { id: 'attachments', label: 'Attachments', icon: 'fas fa-paperclip' },
+            { id: 'proxies', label: 'Proxies', icon: 'fas fa-shield-alt' },
+            { id: 'logs', label: 'Logs', icon: 'fas fa-stream' },
+            { id: 'settings', label: 'Settings', icon: 'fas fa-cog' },
+        ],
+        dashboardStats: {},
+        systemMetrics: {},
+        campaigns: [],
+        accounts: [],
+        templates: [],
+        recipientLists: [],
+        listRecipients: [],
+        selectedList: null,
+        logs: [],
+        configData: null,
+        campaignFilter: '',
+        logLevel: '',
+        logCategory: '',
+        logSearch: '',
+        logPage: 1,
+        logPageSize: 50,
+        logTotal: 0,
+        logTotalPages: 0,
+        logAutoRefresh: false,
+        logRefreshTimer: null,
+        logEventSource: null,
+        showCreateCampaign: false,
+        showCreateAccount: false,
+        showImportAccounts: false,
+        showCreateTemplate: false,
+        showCreateList: false,
+        showAddRecipient: false,
+        showImportToList: false,
+        editingTemplate: null,
+        newCampaign: { name: '', description: '', account_ids: [], template_ids: [], recipient_list_id: '', worker_count: 2, rate_limit: 10, daily_limit: 0, use_proxy: false, proxy_mode: 'round-robin', smart_sending: false, attachment_template_ids: [] },
+        newAccount: { email: '', sender_name: '', provider: 'gmail', password: '', smtp_host: '', smtp_port: 587, daily_limit: 500, sender_names_text: '' },
+        newTemplate: { name: '', subjects_text: '', sender_names_text: '', html_content: '', custom_variables_text: '' },
+        newList: { name: '', description: '', emails: '' },
+        newRecipient: { email: '', first_name: '', last_name: '' },
+        attachmentTemplates: [],
+        showUploadAttachment: false,
+        editingAttachment: null,
+        newAttachment: { name: '', html_content: '', formats: ['pdf'], custom_variables_text: '' },
+        proxies: [],
+        proxyStats: { total: 0, healthy: 0, unhealthy: 0 },
+        showCreateProxy: false,
+        showImportProxies: false,
+        importProxiesText: '',
+        newProxy: { host: '', port: 8080, type: 'http', username: '', password: '', is_active: true },
+        proxyTesting: {},
+        importEmailsText: '',
+        csvAccountsText: '',
+
+        async init() {
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+                this.authToken = token;
+                this.isAuthenticated = true;
+                this.maxConcurrentCampaigns = parseInt(localStorage.getItem('max_concurrent') || '5', 10);
+                this.connectWebSocket();
+                await this.loadDashboard();
+            }
+            this.$watch('currentPage', (page) => this.onPageChange(page));
+        },
+
+        async handleLogin() {
+            this.loginError = '';
+            this.loginLoading = true;
+            try {
+                const resp = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: this.loginUsername, password: this.loginPassword }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    this.loginError = data.error || 'Login failed';
+                    this.loginLoading = false;
+                    return;
+                }
+                this.authToken = data.token;
+                this.isAuthenticated = true;
+                this.maxConcurrentCampaigns = data.max_concurrent_campaigns || 5;
+                localStorage.setItem('auth_token', data.token);
+                localStorage.setItem('max_concurrent', String(data.max_concurrent_campaigns || 5));
+                this.loginPassword = '';
+                this.loginLoading = false;
+                this.connectWebSocket();
+                await this.loadDashboard();
+            } catch(e) {
+                this.loginError = 'Connection failed. Please try again.';
+                this.loginLoading = false;
+            }
+        },
+
+        logout() {
+            this.isAuthenticated = false;
+            this.authToken = null;
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('max_concurrent');
+            if (this.ws) { this.ws.close(); this.ws = null; }
+            this.loginUsername = '';
+            this.loginPassword = '';
+            this.loginError = '';
+        },
+
+        async onPageChange(page) {
+            switch(page) {
+                case 'dashboard': await this.loadDashboard(); break;
+                case 'campaigns': await this.loadCampaigns(); await this.loadAccounts(); await this.loadTemplates(); await this.loadRecipientLists(); break;
+                case 'accounts': await this.loadAccounts(); break;
+                case 'templates': await this.loadTemplates(); break;
+                case 'recipient-lists': this.selectedList = null; await this.loadRecipientLists(); break;
+                case 'attachments': await this.loadAttachmentTemplates(); break;
+                case 'proxies': await this.loadProxies(); break;
+                case 'logs': await this.loadLogs(); break;
+                case 'settings': await this.loadConfig(); break;
+            }
+        },
+
+        refreshCurrentPage() {
+            this.onPageChange(this.currentPage);
+        },
+
+        async api(path, options = {}) {
+            try {
+                const authHeaders = {};
+                if (this.authToken) {
+                    authHeaders['Authorization'] = 'Bearer ' + this.authToken;
+                }
+                const resp = await fetch('/api/v1' + path, {
+                    headers: { 'Content-Type': 'application/json', ...authHeaders, ...options.headers },
+                    ...options,
+                });
+                if (resp.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ message: resp.statusText }));
+                    throw new Error(err.message || err.error || resp.statusText);
+                }
+                const text = await resp.text();
+                return text ? JSON.parse(text) : {};
+            } catch(e) {
+                throw e;
+            }
+        },
+
+        async loadDashboard() {
+            try {
+                const [metrics, campaignData] = await Promise.allSettled([
+                    this.api('/metrics/dashboard'),
+                    this.api('/campaigns?limit=5'),
+                ]);
+                if (metrics.status === 'fulfilled') {
+                    const m = metrics.value;
+                    this.dashboardStats = {
+                        totalCampaigns: m.total_campaigns || m.campaigns?.total || 0,
+                        activeAccounts: m.active_accounts || m.accounts?.active || 0,
+                        emailsSent: m.emails_sent_total || m.emails_sent || m.sending?.total_sent || 0,
+                        successRate: m.success_rate || m.sending?.success_rate || 0,
+                    };
+                    this.systemMetrics = m.system || {};
+                }
+                if (campaignData.status === 'fulfilled') {
+                    this.campaigns = campaignData.value.campaigns || campaignData.value.data || campaignData.value || [];
+                    if (!Array.isArray(this.campaigns)) this.campaigns = [];
+                }
+            } catch(e) {}
+        },
+
+        async loadCampaigns() {
+            try {
+                let url = '/campaigns?limit=50';
+                if (this.campaignFilter) url += '&status=' + this.campaignFilter;
+                const data = await this.api(url);
+                this.campaigns = data.campaigns || data.data || [];
+                if (!Array.isArray(this.campaigns)) this.campaigns = [];
+            } catch(e) { this.campaigns = []; }
+        },
+
+        async loadAccounts() {
+            try {
+                const data = await this.api('/accounts?limit=100');
+                this.accounts = data.accounts || data.data || [];
+                if (!Array.isArray(this.accounts)) this.accounts = [];
+            } catch(e) { this.accounts = []; }
+        },
+
+        async loadTemplates() {
+            try {
+                const data = await this.api('/templates?limit=100');
+                this.templates = data.templates || data.data || [];
+                if (!Array.isArray(this.templates)) this.templates = [];
+            } catch(e) { this.templates = []; }
+        },
+
+        async loadRecipientLists() {
+            try {
+                const data = await this.api('/recipient-lists');
+                this.recipientLists = data.recipient_lists || [];
+                if (!Array.isArray(this.recipientLists)) this.recipientLists = [];
+            } catch(e) { this.recipientLists = []; }
+        },
+
+        async loadListRecipients(listId) {
+            try {
+                const data = await this.api('/recipient-lists/' + listId + '/recipients');
+                this.listRecipients = data.recipients || [];
+                if (!Array.isArray(this.listRecipients)) this.listRecipients = [];
+            } catch(e) { this.listRecipients = []; }
+        },
+
+        async selectList(list) {
+            this.selectedList = list;
+            await this.loadListRecipients(list.id);
+        },
+
+        async loadLogs() {
+            try {
+                const offset = (this.logPage - 1) * this.logPageSize;
+                let url = '/logs?limit=' + this.logPageSize + '&offset=' + offset;
+                if (this.logLevel) url += '&level=' + encodeURIComponent(this.logLevel);
+                if (this.logCategory) url += '&category=' + encodeURIComponent(this.logCategory);
+                if (this.logSearch) url += '&search=' + encodeURIComponent(this.logSearch);
+                const data = await this.api(url);
+                this.logs = (data.logs || data.data || []).map(l => ({ ...l, _expanded: false }));
+                if (!Array.isArray(this.logs)) this.logs = [];
+                this.logTotal = data.total || 0;
+                this.logTotalPages = data.total_pages || Math.ceil(this.logTotal / this.logPageSize) || 0;
+            } catch(e) { this.logs = []; this.logTotal = 0; this.logTotalPages = 0; }
+        },
+
+        toggleLogAutoRefresh() {
+            if (this.logAutoRefresh) {
+                this.logRefreshTimer = setInterval(() => {
+                    if (this.currentPage === 'logs') this.loadLogs();
+                }, 5000);
+            } else {
+                if (this.logRefreshTimer) {
+                    clearInterval(this.logRefreshTimer);
+                    this.logRefreshTimer = null;
+                }
+            }
+        },
+
+        async exportLogs() {
+            try {
+                let url = '/logs?limit=10000';
+                if (this.logLevel) url += '&level=' + encodeURIComponent(this.logLevel);
+                if (this.logCategory) url += '&category=' + encodeURIComponent(this.logCategory);
+                if (this.logSearch) url += '&search=' + encodeURIComponent(this.logSearch);
+                const data = await this.api(url);
+                const exportLogs = data.logs || [];
+                if (exportLogs.length === 0) {
+                    this.showToast('No logs to export', 'error');
+                    return;
+                }
+                const lines = exportLogs.map(l => {
+                    const time = l.time || l.timestamp || l.created_at || '';
+                    return [time, l.level || '', l.category || '', l.message || '', l.error_code || '', l.campaign_id || '', l.account_id || ''].join('\t');
+                });
+                const header = 'Time\tLevel\tCategory\tMessage\tError Code\tCampaign ID\tAccount ID';
+                const content = header + '\n' + lines.join('\n');
+                const blob = new Blob([content], { type: 'text/tab-separated-values' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'logs_' + new Date().toISOString().slice(0, 19).replace(/[:-]/g, '') + '.tsv';
+                a.click();
+                URL.revokeObjectURL(a.href);
+                this.showToast('Exported ' + exportLogs.length + ' logs', 'success');
+            } catch(e) {
+                this.showToast('Export failed: ' + (e.message || 'Unknown error'), 'error');
+            }
+        },
+
+        async loadConfig() {
+            try {
+                this.configData = await this.api('/config');
+            } catch(e) {}
+        },
+
+        async loadProxies() {
+            try {
+                const data = await this.api('/proxies?page=1&page_size=100');
+                this.proxies = data.proxies || [];
+                if (!Array.isArray(this.proxies)) this.proxies = [];
+                let healthy = 0, unhealthy = 0;
+                this.proxies.forEach(p => {
+                    if (p.health_status === 'healthy') healthy++;
+                    else if (p.health_status === 'unhealthy' || p.health_status === 'degraded') unhealthy++;
+                });
+                this.proxyStats = { total: this.proxies.length, healthy, unhealthy };
+            } catch(e) { this.proxies = []; }
+        },
+
+        async createProxy() {
+            try {
+                if (!this.newProxy.host) {
+                    this.showToast('Host is required', 'error');
+                    return;
+                }
+                if (!this.newProxy.port || this.newProxy.port < 1 || this.newProxy.port > 65535) {
+                    this.showToast('Valid port is required (1-65535)', 'error');
+                    return;
+                }
+                await this.api('/proxies', {
+                    method: 'POST',
+                    body: JSON.stringify(this.newProxy),
+                });
+                this.showCreateProxy = false;
+                this.newProxy = { host: '', port: 8080, type: 'http', username: '', password: '', is_active: true };
+                this.showToast('Proxy added', 'success');
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to add proxy', 'error');
+            }
+        },
+
+        async deleteProxy(id) {
+            if (!confirm('Delete this proxy?')) return;
+            try {
+                await this.api('/proxies/' + id, { method: 'DELETE' });
+                this.showToast('Proxy deleted', 'success');
+                await this.loadProxies();
+            } catch(e) {}
+        },
+
+        async testSingleProxy(id) {
+            this.proxyTesting[id] = true;
+            try {
+                const result = await this.api('/proxies/' + id + '/test', { method: 'POST' });
+                if (result.success) {
+                    this.showToast('Proxy is healthy', 'success');
+                } else {
+                    this.showToast('Proxy test failed: ' + (result.error || result.message || 'Unknown'), 'error');
+                }
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast('Test failed: ' + (e.message || 'Unknown error'), 'error');
+            } finally {
+                this.proxyTesting[id] = false;
+            }
+        },
+
+        async testAllProxies() {
+            this.showToast('Testing all proxies...', 'info');
+            try {
+                const result = await this.api('/proxies/health-check', { method: 'POST' });
+                this.showToast('Health check: ' + (result.healthy || 0) + ' healthy, ' + (result.unhealthy || 0) + ' unhealthy', 'success');
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast('Health check failed: ' + (e.message || 'Unknown error'), 'error');
+            }
+        },
+
+        async removeUnhealthyProxies() {
+            if (!confirm('Remove all unhealthy proxies? This cannot be undone.')) return;
+            this.showToast('Removing unhealthy proxies...', 'info');
+            try {
+                const result = await this.api('/proxies/bulk/delete-unhealthy', { method: 'POST' });
+                this.showToast('Removed ' + (result.deleted || 0) + ' unhealthy proxies' + (result.failed > 0 ? ', ' + result.failed + ' failed' : ''), 'success');
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast('Failed to remove unhealthy proxies: ' + (e.message || 'Unknown error'), 'error');
+            }
+        },
+
+        async toggleProxyActive(proxy) {
+            try {
+                await this.api('/proxies/' + proxy.id, {
+                    method: 'PUT',
+                    body: JSON.stringify({ is_active: !proxy.is_active }),
+                });
+                this.showToast('Proxy ' + (!proxy.is_active ? 'activated' : 'deactivated'), 'success');
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to update proxy', 'error');
+            }
+        },
+
+        async importProxiesBulk() {
+            try {
+                const text = this.importProxiesText.trim();
+                if (!text) {
+                    this.showToast('No proxies to import', 'error');
+                    return;
+                }
+                const result = await this.api('/proxies/import-text', {
+                    method: 'POST',
+                    body: JSON.stringify({ text: text })
+                });
+                this.showImportProxies = false;
+                this.importProxiesText = '';
+                const successful = result.successful || 0;
+                const failed = result.failed || 0;
+                this.showToast('Imported ' + successful + ' proxies' + (failed > 0 ? ', ' + failed + ' failed' : ''), successful > 0 ? 'success' : 'error');
+                await this.loadProxies();
+            } catch(e) {
+                this.showToast('Import failed: ' + (e.message || 'Unknown error'), 'error');
+            }
+        },
+
+        handleProxyImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.importProxiesText = e.target.result;
+            };
+            reader.readAsText(file);
+        },
+
+        async openCreateCampaign() {
+            await Promise.allSettled([this.loadAccounts(), this.loadTemplates(), this.loadRecipientLists(), this.loadAttachmentTemplates()]);
+            this.newCampaign = { name: '', description: '', account_ids: [], template_ids: [], recipient_list_id: '', worker_count: 2, rate_limit: 10, daily_limit: 0, use_proxy: false, proxy_mode: 'round-robin', smart_sending: false, attachment_template_ids: [] };
+            this.showCreateCampaign = true;
+        },
+
+        async createCampaign() {
+            try {
+                const payload = {
+                    name: this.newCampaign.name,
+                    description: this.newCampaign.description,
+                    account_ids: this.newCampaign.account_ids,
+                    template_ids: this.newCampaign.template_ids,
+                    recipient_list_id: this.newCampaign.recipient_list_id,
+                    worker_count: this.newCampaign.worker_count || 2,
+                    rate_limit: this.newCampaign.rate_limit || 10,
+                    daily_limit: this.newCampaign.daily_limit || 0,
+                };
+                if (this.newCampaign.use_proxy) {
+                    payload.proxy_enabled = true;
+                    payload.proxy_mode = this.newCampaign.proxy_mode || 'round-robin';
+                }
+                if (this.newCampaign.smart_sending) {
+                    payload.smart_sending = true;
+                }
+                if (this.newCampaign.attachment_template_ids && this.newCampaign.attachment_template_ids.length > 0) {
+                    payload.attachment_template_ids = this.newCampaign.attachment_template_ids;
+                    payload.attachment_enabled = true;
+                }
+                await this.api('/campaigns', { method: 'POST', body: JSON.stringify(payload) });
+                this.showCreateCampaign = false;
+                this.showToast('Campaign created', 'success');
+                await this.loadCampaigns();
+            } catch(e) {}
+        },
+
+        async campaignAction(id, action) {
+            try {
+                await this.api('/campaigns/' + id + '/' + action, { method: 'POST' });
+                this.showToast('Campaign ' + action + 'ed', 'success');
+                await this.loadCampaigns();
+            } catch(e) {}
+        },
+
+        async deleteCampaign(id) {
+            if (!confirm('Delete this campaign?')) return;
+            try {
+                await this.api('/campaigns/' + id, { method: 'DELETE' });
+                this.showToast('Campaign deleted', 'success');
+                await this.loadCampaigns();
+            } catch(e) {}
+        },
+
+        async createAccount() {
+            try {
+                const senderNames = this.newAccount.sender_names_text ? this.newAccount.sender_names_text.split('\n').map(s => s.trim()).filter(Boolean) : [];
+                const payload = {
+                    email: this.newAccount.email,
+                    sender_name: this.newAccount.sender_name,
+                    provider: this.newAccount.provider,
+                    password: this.newAccount.password,
+                    daily_limit: this.newAccount.daily_limit || 500,
+                };
+                if (this.newAccount.provider === 'smtp') {
+                    payload.smtp_host = this.newAccount.smtp_host;
+                    payload.smtp_port = this.newAccount.smtp_port || 587;
+                }
+                if (senderNames.length > 0) {
+                    payload.sender_names = senderNames;
+                }
+                await this.api('/accounts', { method: 'POST', body: JSON.stringify(payload) });
+                this.showCreateAccount = false;
+                this.newAccount = { email: '', sender_name: '', provider: 'gmail', password: '', smtp_host: '', smtp_port: 587, daily_limit: 500, sender_names_text: '' };
+                this.showToast('Account added', 'success');
+                await this.loadAccounts();
+            } catch(e) {}
+        },
+
+        async importAccountsCSV() {
+            try {
+                const blob = new Blob([this.csvAccountsText], { type: 'text/csv' });
+                const formData = new FormData();
+                formData.append('file', blob, 'accounts.csv');
+                const resp = await fetch('/api/v1/accounts/bulk/import', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ message: resp.statusText }));
+                    throw new Error(err.message || err.error || 'Import failed');
+                }
+                const result = await resp.json();
+                this.showImportAccounts = false;
+                this.csvAccountsText = '';
+                this.showToast('Imported ' + (result.successful || result.total || 0) + ' accounts', 'success');
+                await this.loadAccounts();
+            } catch(e) {
+                this.showToast(e.message, 'error');
+            }
+        },
+
+        async deleteAccount(id) {
+            if (!confirm('Delete this account?')) return;
+            try {
+                await this.api('/accounts/' + id, { method: 'DELETE' });
+                this.showToast('Account deleted', 'success');
+                await this.loadAccounts();
+            } catch(e) {}
+        },
+
+        async saveTemplate() {
+            try {
+                if (!this.newTemplate.name || this.newTemplate.name.length < 3) {
+                    this.showToast('Template name required (min 3 characters)', 'error');
+                    return;
+                }
+                if (!this.newTemplate.html_content) {
+                    this.showToast('HTML content is required', 'error');
+                    return;
+                }
+                const subjects = this.newTemplate.subjects_text ? this.newTemplate.subjects_text.split('\n').map(s => s.trim()).filter(Boolean) : [];
+                const senderNames = this.newTemplate.sender_names_text ? this.newTemplate.sender_names_text.split('\n').map(s => s.trim()).filter(Boolean) : [];
+                const customVariables = {};
+                if (this.newTemplate.custom_variables_text) {
+                    this.newTemplate.custom_variables_text.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+                        const eqIdx = line.indexOf('=');
+                        if (eqIdx > 0) {
+                            const key = line.substring(0, eqIdx).trim();
+                            const values = line.substring(eqIdx + 1).split(',').map(v => v.trim()).filter(Boolean);
+                            if (key && values.length > 0) customVariables[key] = values;
+                        }
+                    });
+                }
+                const payload = {
+                    name: this.newTemplate.name,
+                    subjects: subjects,
+                    content: this.newTemplate.html_content,
+                    type: 'html',
+                    is_active: true,
+                };
+                if (senderNames.length > 0) payload.sender_names = senderNames;
+                if (Object.keys(customVariables).length > 0) payload.custom_variables = customVariables;
+                if (this.editingTemplate) {
+                    await this.api('/templates/' + this.editingTemplate.id, {
+                        method: 'PUT',
+                        body: JSON.stringify(payload),
+                    });
+                    this.showToast('Template updated', 'success');
+                } else {
+                    await this.api('/templates', {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                    this.showToast('Template created', 'success');
+                }
+                this.showCreateTemplate = false;
+                this.editingTemplate = null;
+                this.newTemplate = { name: '', subjects_text: '', sender_names_text: '', html_content: '', custom_variables_text: '' };
+                await this.loadTemplates();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to save template', 'error');
+            }
+        },
+
+        editTemplate(t) {
+            this.editingTemplate = t;
+            const subjectsText = (t.subjects && t.subjects.length > 0) ? t.subjects.join('\n') : (t.subject || '');
+            let customVariablesText = '';
+            if (t.custom_variables && typeof t.custom_variables === 'object') {
+                customVariablesText = Object.entries(t.custom_variables).map(([key, values]) => {
+                    return key + '=' + (Array.isArray(values) ? values.join(',') : values);
+                }).join('\n');
+            }
+            const senderNamesText = (t.sender_names && t.sender_names.length > 0) ? t.sender_names.join('\n') : '';
+            this.newTemplate = { name: t.name, subjects_text: subjectsText, sender_names_text: senderNamesText, html_content: t.content || t.html_content || '', custom_variables_text: customVariablesText };
+            this.showCreateTemplate = true;
+        },
+
+        async deleteTemplate(id) {
+            if (!confirm('Delete this template?')) return;
+            try {
+                await this.api('/templates/' + id, { method: 'DELETE' });
+                this.showToast('Template deleted', 'success');
+                await this.loadTemplates();
+            } catch(e) {}
+        },
+
+        async loadAttachmentTemplates() {
+            try {
+                const data = await this.api('/files/list/attachments');
+                this.attachmentTemplates = (data.files || []).filter(f => f.name && (f.name.endsWith('.html') || f.name.endsWith('.htm')));
+            } catch(e) { this.attachmentTemplates = []; }
+        },
+
+        handleAttachmentFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.newAttachment.html_content = e.target.result;
+                if (!this.newAttachment.name) {
+                    this.newAttachment.name = file.name.replace(/\.(html|htm)$/i, '');
+                }
+            };
+            reader.readAsText(file);
+        },
+
+        updateAttachmentFormats(event) {
+            if (!this.newAttachment.formats) {
+                this.newAttachment.formats = [];
+            }
+            if (event.target.checked) {
+                if (!this.newAttachment.formats.includes(event.target.value)) {
+                    this.newAttachment.formats.push(event.target.value);
+                }
+            } else {
+                this.newAttachment.formats = this.newAttachment.formats.filter(f => f !== event.target.value);
+            }
+        },
+
+        async saveAttachmentTemplate() {
+            try {
+                if (!this.newAttachment.name) {
+                    this.showToast('Template name is required', 'error');
+                    return;
+                }
+                if (!this.newAttachment.html_content) {
+                    this.showToast('HTML content is required (paste or upload a file)', 'error');
+                    return;
+                }
+                if (!this.newAttachment.formats || this.newAttachment.formats.length === 0) {
+                    this.showToast('Please select at least one output format', 'error');
+                    return;
+                }
+                const filename = this.newAttachment.name.endsWith('.html') ? this.newAttachment.name : this.newAttachment.name + '.html';
+                const token = localStorage.getItem('auth_token');
+                if (this.editingAttachment && this.editingAttachment.name !== filename) {
+                    await fetch('/api/v1/files/delete/attachments/' + encodeURIComponent(this.editingAttachment.name), {
+                        method: 'DELETE',
+                        headers: { 'Authorization': 'Bearer ' + token },
+                    });
+                    const oldMeta = this.editingAttachment.name.replace(/\.(html|htm)$/i, '') + '.meta.json';
+                    await fetch('/api/v1/files/delete/attachments/' + encodeURIComponent(oldMeta), {
+                        method: 'DELETE',
+                        headers: { 'Authorization': 'Bearer ' + token },
+                    }).catch(() => {});
+                }
+                const blob = new Blob([this.newAttachment.html_content], { type: 'text/html' });
+                const formData = new FormData();
+                formData.append('file', blob, filename);
+                formData.append('category', 'attachments');
+                const res = await fetch('/api/v1/files/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    body: formData,
+                });
+                if (!res.ok) throw new Error('Upload failed');
+                const customVariables = {};
+                if (this.newAttachment.custom_variables_text) {
+                    this.newAttachment.custom_variables_text.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+                        const eqIdx = line.indexOf('=');
+                        if (eqIdx > 0) {
+                            const key = line.substring(0, eqIdx).trim();
+                            const values = line.substring(eqIdx + 1).split(',').map(v => v.trim()).filter(Boolean);
+                            if (key && values.length > 0) customVariables[key] = values;
+                        }
+                    });
+                }
+                const metaFilename = filename.replace(/\.(html|htm)$/i, '') + '.meta.json';
+                const meta = { formats: this.newAttachment.formats, custom_variables: customVariables };
+                if (this.newAttachment.filename && this.newAttachment.filename.trim()) {
+                    meta.filename = this.newAttachment.filename.trim();
+                }
+                const metaBlob = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
+                const metaForm = new FormData();
+                metaForm.append('file', metaBlob, metaFilename);
+                metaForm.append('category', 'attachments');
+                const metaRes = await fetch('/api/v1/files/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    body: metaForm,
+                });
+                if (!metaRes.ok) throw new Error('Failed to save template metadata');
+                const wasEditing = !!this.editingAttachment;
+                this.showUploadAttachment = false;
+                this.editingAttachment = null;
+                this.newAttachment = { name: '', html_content: '', formats: ['pdf'], filename: '', custom_variables_text: '' };
+                this.showToast(wasEditing ? 'Attachment template updated' : 'Attachment template saved', 'success');
+                await this.loadAttachmentTemplates();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to save attachment template', 'error');
+            }
+        },
+
+        async editAttachmentTemplate(att) {
+            try {
+                const token = localStorage.getItem('auth_token');
+                const htmlRes = await fetch('/api/v1/files/download/attachments/' + encodeURIComponent(att.name), {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                });
+                const htmlContent = htmlRes.ok ? await htmlRes.text() : '';
+                const baseName = att.name.replace(/\.(html|htm)$/i, '');
+                const metaFilename = baseName + '.meta.json';
+                let format = 'pdf';
+                let attachFilename = '';
+                let customVarsText = '';
+                try {
+                    const metaRes = await fetch('/api/v1/files/download/attachments/' + encodeURIComponent(metaFilename), {
+                        headers: { 'Authorization': 'Bearer ' + token },
+                    });
+                    if (metaRes.ok) {
+                        const meta = await metaRes.json();
+                        let formats = ['pdf'];
+                        if (meta.formats && Array.isArray(meta.formats) && meta.formats.length > 0) formats = meta.formats;
+                        if (meta.filename) attachFilename = meta.filename;
+                        if (meta.custom_variables && typeof meta.custom_variables === 'object') {
+                            customVarsText = Object.entries(meta.custom_variables).map(([key, values]) => {
+                                return key + '=' + (Array.isArray(values) ? values.join(',') : values);
+                            }).join('\n');
+                        }
+                        this.editingAttachment = att;
+                        this.newAttachment = { name: baseName, html_content: htmlContent, formats: formats, filename: attachFilename, custom_variables_text: customVarsText };
+                        this.showUploadAttachment = true;
+                        return;
+                    }
+                } catch(e) {}
+                this.editingAttachment = att;
+                this.newAttachment = { name: baseName, html_content: htmlContent, formats: ['pdf'], filename: attachFilename, custom_variables_text: customVarsText };
+                this.showUploadAttachment = true;
+            } catch(e) {
+                this.showToast('Failed to load template for editing', 'error');
+            }
+        },
+
+        async deleteAttachmentTemplate(name) {
+            if (!confirm('Delete attachment template "' + name + '"?')) return;
+            try {
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch('/api/v1/files/delete/attachments/' + encodeURIComponent(name), {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                });
+                if (!res.ok) throw new Error('Delete failed');
+                const metaFilename = name.replace(/\.(html|htm)$/i, '') + '.meta.json';
+                await fetch('/api/v1/files/delete/attachments/' + encodeURIComponent(metaFilename), {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                }).catch(() => {});
+                this.showToast('Attachment template deleted', 'success');
+                await this.loadAttachmentTemplates();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to delete', 'error');
+            }
+        },
+
+        async createListWithRecipients() {
+            if (!this.newList.name || this.newList.name.trim().length === 0) {
+                this.showToast('List name is required', 'error');
+                return;
+            }
+            try {
+                const listRes = await this.api('/recipient-lists', {
+                    method: 'POST',
+                    body: JSON.stringify({ name: this.newList.name, description: this.newList.description }),
+                });
+                const listId = listRes.id;
+                
+                let count = 0;
+                if (this.newList.emails && this.newList.emails.trim().length > 0) {
+                    const emails = this.newList.emails.split('\n').map(e => e.trim()).filter(e => e.length > 0);
+                    count = emails.length;
+                    await this.api('/recipient-lists/' + listId + '/import', {
+                        method: 'POST',
+                        body: JSON.stringify({ emails }),
+                    });
+                }
+                
+                this.showCreateList = false;
+                this.newList = { name: '', description: '', emails: '' };
+                this.showToast('List created with ' + count + ' recipient' + (count !== 1 ? 's' : ''), 'success');
+                await this.loadRecipientLists();
+            } catch(e) {
+                this.showToast('Error: ' + (e.message || 'Failed to create list'), 'error');
+            }
+        },
+
+        async createList() {
+            await this.createListWithRecipients();
+        },
+
+        async deleteList(id) {
+            if (!confirm('Delete this recipient list?')) return;
+            try {
+                await this.api('/recipient-lists/' + id, { method: 'DELETE' });
+                this.showToast('List deleted', 'success');
+                await this.loadRecipientLists();
+            } catch(e) {}
+        },
+
+        async addRecipientToList() {
+            if (!this.selectedList) return;
+            try {
+                await this.api('/recipient-lists/' + this.selectedList.id + '/recipients', {
+                    method: 'POST',
+                    body: JSON.stringify(this.newRecipient),
+                });
+                this.showAddRecipient = false;
+                this.newRecipient = { email: '', first_name: '', last_name: '' };
+                this.showToast('Recipient added', 'success');
+                await this.loadListRecipients(this.selectedList.id);
+                await this.loadRecipientLists();
+            } catch(e) {
+                this.showToast(e.message || 'Failed to add recipient', 'error');
+            }
+        },
+
+        async importEmailsToList() {
+            if (!this.selectedList) return;
+            try {
+                const emails = this.importEmailsText.split('\n').map(s => s.trim()).filter(Boolean);
+                if (emails.length === 0) {
+                    this.showToast('No emails to import', 'error');
+                    return;
+                }
+                const result = await this.api('/recipient-lists/' + this.selectedList.id + '/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ emails }),
+                });
+                this.showImportToList = false;
+                this.importEmailsText = '';
+                this.showToast('Imported ' + (result.successful || 0) + ' emails', 'success');
+                await this.loadListRecipients(this.selectedList.id);
+                await this.loadRecipientLists();
+            } catch(e) {
+                this.showToast('Failed to import: ' + (e.message || 'Unknown error'), 'error');
+            }
+        },
+
+        async handleImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const emails = text.split('\n').map(line => line.trim()).filter(Boolean);
+                this.importEmailsText = emails.join('\n');
+            };
+            reader.readAsText(file);
+        },
+
+        async handleNewListFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const emails = text.split('\n').map(line => line.trim()).filter(Boolean);
+                this.newList.emails = emails.join('\n');
+            };
+            reader.readAsText(file);
+        },
+
+        async deleteRecipient(id) {
+            if (!confirm('Delete this recipient?')) return;
+            try {
+                await this.api('/recipients/' + id, { method: 'DELETE' });
+                this.showToast('Recipient deleted', 'success');
+                if (this.selectedList) {
+                    await this.loadListRecipients(this.selectedList.id);
+                    await this.loadRecipientLists();
+                }
+            } catch(e) {}
+        },
+
+        connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let wsUrl = protocol + '//' + location.host + '/ws/connect';
+            if (this.authToken) wsUrl += '?token=' + encodeURIComponent(this.authToken);
+            try {
+                this.ws = new WebSocket(wsUrl);
+                this.ws.onopen = () => { this.wsConnected = true; };
+                this.ws.onclose = () => {
+                    this.wsConnected = false;
+                    setTimeout(() => this.connectWebSocket(), 5000);
+                };
+                this.ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        this.handleWsMessage(msg);
+                    } catch(e) {}
+                };
+                this.ws.onerror = () => { this.wsConnected = false; };
+            } catch(e) {
+                setTimeout(() => this.connectWebSocket(), 5000);
+            }
+        },
+
+        handleWsMessage(msg) {
+            switch(msg.type) {
+                case 'campaign_progress':
+                case 'campaign_status':
+                    if (this.currentPage === 'campaigns' || this.currentPage === 'dashboard') {
+                        this.loadCampaigns();
+                    }
+                    break;
+                case 'system_metrics':
+                    this.systemMetrics = msg.data || {};
+                    break;
+                case 'proxy_created':
+                case 'proxy_updated':
+                case 'proxy_deleted':
+                case 'proxies_imported':
+                case 'proxy_health_checked':
+                    if (this.currentPage === 'proxies') {
+                        this.loadProxies();
+                    }
+                    break;
+                case 'log_entry':
+                    if (this.currentPage === 'logs' && this.logAutoRefresh && msg.data) {
+                        const entry = { ...msg.data, _expanded: false };
+                        this.logs.unshift(entry);
+                        if (this.logs.length > this.logPageSize) this.logs.pop();
+                        this.logTotal++;
+                    }
+                    break;
+            }
+        },
+
+        showToast(message, type = 'info') {
+            const id = Date.now();
+            this.toasts.push({ id, message, type });
+            setTimeout(() => {
+                this.toasts = this.toasts.filter(t => t.id !== id);
+            }, 4000);
+        },
+
+        statusClass(status) {
+            const classes = {
+                'created': 'bg-gray-800 text-gray-300',
+                'running': 'bg-blue-500/10 text-blue-400',
+                'paused': 'bg-yellow-500/10 text-yellow-400',
+                'completed': 'bg-green-500/10 text-green-400',
+                'failed': 'bg-red-500/10 text-red-400',
+                'stopped': 'bg-gray-800 text-gray-400',
+            };
+            return classes[status] || 'bg-gray-800 text-gray-300';
+        },
+
+        logLevelClass(level) {
+            const l = (level || '').toLowerCase();
+            const classes = {
+                'info': 'bg-blue-500/10 text-blue-400',
+                'warn': 'bg-yellow-500/10 text-yellow-400',
+                'warning': 'bg-yellow-500/10 text-yellow-400',
+                'error': 'bg-red-500/10 text-red-400',
+                'fatal': 'bg-red-500/20 text-red-300',
+                'debug': 'bg-gray-800 text-gray-400',
+                'system': 'bg-purple-500/10 text-purple-400',
+                'metric': 'bg-cyan-500/10 text-cyan-400',
+                'audit': 'bg-orange-500/10 text-orange-400',
+                'deliverability': 'bg-emerald-500/10 text-emerald-400',
+            };
+            return classes[l] || 'bg-gray-800 text-gray-300';
+        },
+
+        formatNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString();
+        },
+
+        formatDateTime(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleString();
+        },
+
+        flattenConfig(obj, prefix = '') {
+            const result = {};
+            if (!obj) return result;
+            for (const [key, value] of Object.entries(obj)) {
+                const fullKey = prefix ? prefix + '.' + key : key;
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
+                    Object.assign(result, this.flattenConfig(value, fullKey));
+                } else {
+                    result[fullKey] = value;
+                }
+            }
+            return result;
+        },
+    };
+}
+</script>
+</body>
+</html>

@@ -1,76 +1,76 @@
 package campaign
 
 import (
-	"context"
-	"email-campaign-system/internal/api/websocket"
-	"email-campaign-system/internal/models"
-	"email-campaign-system/internal/storage/repository"
-	"email-campaign-system/pkg/logger"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"sync"
-	"time"
+        "context"
+        "email-campaign-system/internal/api/websocket"
+        "email-campaign-system/internal/models"
+        "email-campaign-system/internal/storage/repository"
+        "email-campaign-system/pkg/logger"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "sync"
+        "time"
 
-	"github.com/google/uuid"
+        "github.com/google/uuid"
 )
 
 var (
-	ErrCampaignNotFound       = errors.New("campaign not found")
-	ErrCampaignAlreadyExists  = errors.New("campaign already exists")
-	ErrCampaignNotRunning     = errors.New("campaign not running")
-	ErrCampaignAlreadyRunning = errors.New("campaign already running")
-	ErrInvalidCampaignState   = errors.New("invalid campaign state")
-	ErrCampaignCompleted      = errors.New("campaign already completed")
+        ErrCampaignNotFound       = errors.New("campaign not found")
+        ErrCampaignAlreadyExists  = errors.New("campaign already exists")
+        ErrCampaignNotRunning     = errors.New("campaign not running")
+        ErrCampaignAlreadyRunning = errors.New("campaign already running")
+        ErrInvalidCampaignState   = errors.New("invalid campaign state")
+        ErrCampaignCompleted      = errors.New("campaign already completed")
 )
 
 type Manager struct {
-	campaigns      map[string]*CampaignInstance
-	mu             sync.RWMutex
-	repo           repository.CampaignRepository
-	executor       *Executor
-	persistence    *Persistence
-	scheduler      *Scheduler
-	cleanup        *Cleanup
-	stateMachine   *StateMachine
-	hub            *websocket.Hub
-	log            logger.Logger // ✅ Fixed: Interface, not pointer
-	maxConcurrent  int
-	shutdownSignal chan struct{}
-	wg             sync.WaitGroup
+        campaigns      map[string]*CampaignInstance
+        mu             sync.RWMutex
+        repo           repository.CampaignRepository
+        executor       *Executor
+        persistence    *Persistence
+        scheduler      *Scheduler
+        cleanup        *Cleanup
+        stateMachine   *StateMachine
+        hub            *websocket.Hub
+        log            logger.Logger
+        maxConcurrent  int
+        shutdownSignal chan struct{}
+        wg             sync.WaitGroup
 }
 
 type CampaignInstance struct {
-	Campaign       *models.Campaign
-	State          *CampaignState
-	Executor       *ExecutorInstance
-	Stats          *CampaignStats
-	StartTime      time.Time
-	EndTime        time.Time
-	LastCheckpoint time.Time
-	mu             sync.RWMutex
+        Campaign       *models.Campaign
+        State          *CampaignState
+        Executor       *ExecutorInstance
+        Stats          *CampaignStats
+        StartTime      time.Time
+        EndTime        time.Time
+        LastCheckpoint time.Time
+        mu             sync.RWMutex
 }
 
 type CampaignStats struct {
-	TotalRecipients   int64
-	Sent              int64
-	Failed            int64
-	Pending           int64
-	Skipped           int64
-	SuccessRate       float64
-	Throughput        float64
-	AverageSendTime   time.Duration
-	EstimatedComplete time.Time
-	mu                sync.RWMutex
+        TotalRecipients   int64
+        Sent              int64
+        Failed            int64
+        Pending           int64
+        Skipped           int64
+        SuccessRate       float64
+        Throughput        float64
+        AverageSendTime   time.Duration
+        EstimatedComplete time.Time
+        mu                sync.RWMutex
 }
 
 type ManagerConfig struct {
-	MaxConcurrentCampaigns int
-	CheckpointInterval     time.Duration
-	CleanupInterval        time.Duration
-	StatsUpdateInterval    time.Duration
-	MaxRetries             int
-	RetryDelay             time.Duration
+        MaxConcurrentCampaigns int
+        CheckpointInterval     time.Duration
+        CleanupInterval        time.Duration
+        StatsUpdateInterval    time.Duration
+        MaxRetries             int
+        RetryDelay             time.Duration
 }
 
 func NewManager(
@@ -83,9 +83,10 @@ func NewManager(
     log logger.Logger,
     config ManagerConfig,
 ) *Manager {
-    // ✅ Normalize BEFORE constructing m, so m.maxConcurrent gets the right value
-    if config.MaxConcurrentCampaigns <= 0 {
-        config.MaxConcurrentCampaigns = 5
+
+    // -1 = block all, 0 = unlimited, >0 = cap.  Only clamp values below -1.
+    if config.MaxConcurrentCampaigns < -1 {
+        config.MaxConcurrentCampaigns = -1
     }
     if config.CheckpointInterval <= 0 {
         config.CheckpointInterval = 30 * time.Second
@@ -107,7 +108,7 @@ func NewManager(
         stateMachine:   NewStateMachine(),
         hub:            hub,
         log:            log,
-        maxConcurrent:  config.MaxConcurrentCampaigns, // ✅ now gets 5
+        maxConcurrent:  config.MaxConcurrentCampaigns,
         shutdownSignal: make(chan struct{}),
     }
 
@@ -143,53 +144,44 @@ func (m *Manager) UpdateCampaign(ctx context.Context, campaign *models.Campaign)
 }
 
 func (m *Manager) CreateCampaign(ctx context.Context, campaign *models.Campaign) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+        m.mu.Lock()
+        defer m.mu.Unlock()
 
-	fmt.Printf("DEBUG CreateCampaign START: name=%s\n", campaign.Name)
+        if campaign.ID == "" {
+                campaign.ID = uuid.New().String()
+        }
 
-	if campaign.ID == "" {
-		campaign.ID = uuid.New().String()
-	}
-	fmt.Printf("DEBUG CreateCampaign: id=%s\n", campaign.ID)
+        if _, exists := m.campaigns[campaign.ID]; exists {
+                return ErrCampaignAlreadyExists
+        }
 
-	if _, exists := m.campaigns[campaign.ID]; exists {
-		fmt.Printf("DEBUG CreateCampaign: already exists\n")
-		return ErrCampaignAlreadyExists
-	}
+        if err := m.validateCampaign(campaign); err != nil {
+                return fmt.Errorf("campaign validation failed: %w", err)
+        }
 
-	if err := m.validateCampaign(campaign); err != nil {
-		fmt.Printf("DEBUG CreateCampaign: validation FAILED: %v\n", err)
-		return fmt.Errorf("campaign validation failed: %w", err)
-	}
-	fmt.Printf("DEBUG CreateCampaign: validation passed\n")
+        campaign.Status = models.CampaignStatusCreated
+        campaign.CreatedAt = time.Now()
+        campaign.UpdatedAt = time.Now()
 
-	campaign.Status = models.CampaignStatusCreated
-	campaign.CreatedAt = time.Now()
-	campaign.UpdatedAt = time.Now()
+        repoCampaign := m.toRepositoryCampaign(campaign)
 
-	repoCampaign := m.toRepositoryCampaign(campaign)
-	fmt.Printf("DEBUG CreateCampaign: repoCampaign built, calling repo.Create\n")
+        if err := m.repo.Create(ctx, repoCampaign); err != nil {
+                return fmt.Errorf("failed to create campaign: %w", err)
+        }
 
-	if err := m.repo.Create(ctx, repoCampaign); err != nil {
-		fmt.Printf("DEBUG CreateCampaign: repo.Create FAILED: %v\n", err)
-		return fmt.Errorf("failed to create campaign: %w", err)
-	}
-	fmt.Printf("DEBUG CreateCampaign: repo.Create SUCCESS\n")
+        instance := &CampaignInstance{
+                Campaign: campaign,
+                State:    NewCampaignState(campaign.ID),
+                Stats:    &CampaignStats{},
+        }
+        m.campaigns[campaign.ID] = instance
 
-	instance := &CampaignInstance{
-		Campaign: campaign,
-		State:    NewCampaignState(campaign.ID),
-		Stats:    &CampaignStats{},
-	}
-	m.campaigns[campaign.ID] = instance
+        m.log.Info("campaign created",
+                logger.String("campaign_id", campaign.ID),
+                logger.String("name", campaign.Name))
 
-	m.log.Info("campaign created",
-		logger.String("campaign_id", campaign.ID),
-		logger.String("name", campaign.Name))
-
-	m.broadcastCampaignEvent(campaign.ID, "created", nil)
-	return nil
+        m.broadcastCampaignEvent(campaign.ID, "created", nil)
+        return nil
 }
 
 func (m *Manager) StartCampaign(ctx context.Context, campaignID string) error {
@@ -201,8 +193,12 @@ func (m *Manager) StartCampaign(ctx context.Context, campaignID string) error {
     }
     m.mu.Unlock()
 
-    // ✅ Check BEFORE acquiring instance lock — avoids reentrant deadlock
-    if m.getRunningCount() >= m.maxConcurrent {
+
+    // -1 = all campaigns blocked; 0 = unlimited; >0 = cap at N.
+    if m.maxConcurrent == -1 {
+        return fmt.Errorf("campaign starting is disabled (max_concurrent_campaigns = -1)")
+    }
+    if m.maxConcurrent > 0 && m.getRunningCount() >= m.maxConcurrent {
         return fmt.Errorf("maximum concurrent campaigns reached: %d", m.maxConcurrent)
     }
 
@@ -222,7 +218,9 @@ func (m *Manager) StartCampaign(ctx context.Context, campaignID string) error {
         return fmt.Errorf("failed to update campaign: %w", err)
     }
 
-    executorInstance, err := m.executor.Start(ctx, instance.Campaign)
+    campaignCtx := context.Background()
+
+    executorInstance, err := m.executor.Start(campaignCtx, instance.Campaign)
     if err != nil {
         instance.State.Status = models.CampaignStatusFailed
         instance.Campaign.Status = models.CampaignStatusFailed
@@ -238,53 +236,53 @@ func (m *Manager) StartCampaign(ctx context.Context, campaignID string) error {
         "start_time": instance.StartTime,
     })
 
-    go m.monitorCampaign(ctx, instance)
+    go m.monitorCampaign(campaignCtx, instance)
 
     return nil
 }
 
 func (m *Manager) PauseCampaign(ctx context.Context, campaignID string) error {
-	m.mu.RLock()
-	instance, exists := m.campaigns[campaignID]
-	m.mu.RUnlock()
+        m.mu.RLock()
+        instance, exists := m.campaigns[campaignID]
+        m.mu.RUnlock()
 
-	if !exists {
-		return ErrCampaignNotFound
-	}
+        if !exists {
+                return ErrCampaignNotFound
+        }
 
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
+        instance.mu.Lock()
+        defer instance.mu.Unlock()
 
-	if instance.State.Status != models.CampaignStatusRunning {
-		return ErrCampaignNotRunning
-	}
+        if instance.State.Status != models.CampaignStatusRunning {
+                return ErrCampaignNotRunning
+        }
 
-	if instance.Executor != nil {
-		if err := instance.Executor.Pause(ctx); err != nil {
-			return fmt.Errorf("failed to pause executor: %w", err)
-		}
-	}
+        if instance.Executor != nil {
+                if err := instance.Executor.Pause(ctx); err != nil {
+                        return fmt.Errorf("failed to pause executor: %w", err)
+                }
+        }
 
-	instance.State.Status = models.CampaignStatusPaused
-	instance.Campaign.Status = models.CampaignStatusPaused
-	instance.Campaign.UpdatedAt = time.Now()
+        instance.State.Status = models.CampaignStatusPaused
+        instance.Campaign.Status = models.CampaignStatusPaused
+        instance.Campaign.UpdatedAt = time.Now()
 
-	if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
-		return fmt.Errorf("failed to update campaign: %w", err)
-	}
+        if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
+                return fmt.Errorf("failed to update campaign: %w", err)
+        }
 
-	if m.persistence != nil {
-		if err := m.persistence.SaveState(ctx, campaignID, instance.State); err != nil {
-			m.log.Error("failed to save campaign state",
-				logger.String("campaign_id", campaignID),
-				logger.String("error", err.Error()))
-		}
-	}
-	m.log.Info("campaign paused", logger.String("campaign_id", campaignID))
+        if m.persistence != nil {
+                if err := m.persistence.SaveState(ctx, campaignID, instance.State); err != nil {
+                        m.log.Error("failed to save campaign state",
+                                logger.String("campaign_id", campaignID),
+                                logger.String("error", err.Error()))
+                }
+        }
+        m.log.Info("campaign paused", logger.String("campaign_id", campaignID))
 
-	m.broadcastCampaignEvent(campaignID, "paused", nil)
+        m.broadcastCampaignEvent(campaignID, "paused", nil)
 
-	return nil
+        return nil
 }
 
 func (m *Manager) ResumeCampaign(ctx context.Context, campaignID string) error {
@@ -302,17 +300,44 @@ func (m *Manager) ResumeCampaign(ctx context.Context, campaignID string) error {
         return fmt.Errorf("%w: campaign is not paused", ErrInvalidCampaignState)
     }
 
-    // ✅ Resume running executor if it exists (live pause)
-    if instance.Executor != nil {
-        if err := instance.Executor.Resume(ctx); err != nil {
-            return fmt.Errorf("failed to resume executor: %w", err)
-        }
-    } else {
-        // ✅ Executor is nil = server restart case — restart from checkpoint
-        processedCount := instance.Stats.Sent + instance.Stats.Failed
-        fmt.Printf("DEBUG ResumeCampaign: restarting from checkpoint offset=%d\n", processedCount)
+    campaignCtx := context.Background()
 
-        executorInstance, err := m.executor.StartFromCheckpoint(ctx, instance.Campaign, processedCount)
+    if instance.Executor != nil {
+        if err := instance.Executor.Resume(campaignCtx); err != nil {
+            // If the executor has stopped (e.g., it completed or crashed before pause
+            // was called, or after pause), we can't resume it.  Clear the reference
+            // and restart from checkpoint instead.
+            if err == ErrExecutorStopped {
+                instance.Executor = nil
+            } else {
+                return fmt.Errorf("failed to resume executor: %w", err)
+            }
+        } else {
+            // Resume succeeded; executor is running again
+            instance.State.Status = models.CampaignStatusRunning
+            instance.Campaign.Status = models.CampaignStatusRunning
+            instance.Campaign.UpdatedAt = time.Now()
+
+            if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
+                return fmt.Errorf("failed to update campaign: %w", err)
+            }
+
+            m.log.Info("campaign resumed", logger.String("campaign_id", campaignID))
+            m.broadcastCampaignEvent(campaignID, "resumed", map[string]interface{}{
+                "resumed_at": time.Now(),
+            })
+
+            go m.monitorCampaign(campaignCtx, instance)
+            return nil
+        }
+    }
+
+    // If we reach here, either the executor is nil or it was stopped and we cleared it.
+    // Restart from checkpoint.
+    {
+        processedCount := instance.Stats.Sent + instance.Stats.Failed
+
+        executorInstance, err := m.executor.StartFromCheckpoint(campaignCtx, instance.Campaign, processedCount)
         if err != nil {
             return fmt.Errorf("failed to restart executor from checkpoint: %w", err)
         }
@@ -332,183 +357,177 @@ func (m *Manager) ResumeCampaign(ctx context.Context, campaignID string) error {
         "resumed_at": time.Now(),
     })
 
-    go m.monitorCampaign(ctx, instance)
+    go m.monitorCampaign(campaignCtx, instance)
 
     return nil
 }
 
 func (m *Manager) StopCampaign(ctx context.Context, campaignID string) error {
-	m.mu.RLock()
-	instance, exists := m.campaigns[campaignID]
-	m.mu.RUnlock()
+        m.mu.RLock()
+        instance, exists := m.campaigns[campaignID]
+        m.mu.RUnlock()
 
-	if !exists {
-		return ErrCampaignNotFound
-	}
+        if !exists {
+                return ErrCampaignNotFound
+        }
 
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
+        instance.mu.Lock()
+        defer instance.mu.Unlock()
 
-	if instance.State.Status != models.CampaignStatusRunning && instance.State.Status != models.CampaignStatusPaused {
-		return fmt.Errorf("%w: campaign is not running or paused", ErrInvalidCampaignState)
-	}
+        if instance.State.Status != models.CampaignStatusRunning && instance.State.Status != models.CampaignStatusPaused {
+                return fmt.Errorf("%w: campaign is not running or paused", ErrInvalidCampaignState)
+        }
 
-	if instance.Executor != nil {
-		if err := instance.Executor.Stop(ctx); err != nil {
-			m.log.Error("error stopping executor",
-				logger.String("campaign_id", campaignID),
-				logger.String("error", err.Error()))
-		}
-	}
+        if instance.Executor != nil {
+                if err := instance.Executor.Stop(ctx); err != nil {
+                        m.log.Error("error stopping executor",
+                                logger.String("campaign_id", campaignID),
+                                logger.String("error", err.Error()))
+                }
+        }
 
-	instance.State.Status = models.CampaignStatusStopped
-	instance.Campaign.Status = models.CampaignStatusStopped
-	instance.EndTime = time.Now()
-	instance.Campaign.CompletedAt = &instance.EndTime
-	instance.Campaign.UpdatedAt = time.Now()
+        instance.State.Status = models.CampaignStatusStopped
+        instance.Campaign.Status = models.CampaignStatusStopped
+        instance.EndTime = time.Now()
+        instance.Campaign.CompletedAt = &instance.EndTime
+        instance.Campaign.UpdatedAt = time.Now()
 
-	if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
-		return fmt.Errorf("failed to update campaign: %w", err)
-	}
+        if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
+                return fmt.Errorf("failed to update campaign: %w", err)
+        }
 
-	if err := m.repo.UpdateProgress(ctx, campaignID,
-		int(instance.Stats.Sent),
-		int(instance.Stats.Failed),
-		int(instance.Stats.Pending),
-	); err != nil {
-		m.log.Error("failed to persist final stats on stop",
-			logger.String("campaign_id", campaignID),
-			logger.String("error", err.Error()))
-	}
+        if err := m.repo.UpdateProgress(ctx, campaignID,
+                int(instance.Stats.Sent),
+                int(instance.Stats.Failed),
+                int(instance.Stats.Pending),
+        ); err != nil {
+                m.log.Error("failed to persist final stats on stop",
+                        logger.String("campaign_id", campaignID),
+                        logger.String("error", err.Error()))
+        }
 
-	if m.persistence != nil {
-		if err := m.persistence.SaveState(ctx, campaignID, instance.State); err != nil {
-			m.log.Error("failed to save campaign state",
-				logger.String("campaign_id", campaignID),
-				logger.String("error", err.Error()))
-		}
-	}
+        if m.persistence != nil {
+                if err := m.persistence.SaveState(ctx, campaignID, instance.State); err != nil {
+                        m.log.Error("failed to save campaign state",
+                                logger.String("campaign_id", campaignID),
+                                logger.String("error", err.Error()))
+                }
+        }
 
-	m.log.Info("campaign stopped", logger.String("campaign_id", campaignID))
+        m.log.Info("campaign stopped", logger.String("campaign_id", campaignID))
 
-	m.broadcastCampaignEvent(campaignID, "stopped", map[string]interface{}{
-		"end_time": instance.EndTime,
-		"stats":    instance.Stats,
-	})
+        m.broadcastCampaignEvent(campaignID, "stopped", map[string]interface{}{
+                "end_time": instance.EndTime,
+                "stats":    instance.Stats,
+        })
 
-	return nil
+        return nil
 }
 
 
 func (m *Manager) GetCampaign(ctx context.Context, campaignID string) (*models.Campaign, error) {
-	m.mu.RLock()
-	instance, exists := m.campaigns[campaignID]
-	m.mu.RUnlock()
+        m.mu.RLock()
+        instance, exists := m.campaigns[campaignID]
+        m.mu.RUnlock()
 
-	if !exists {
-		fmt.Printf("DEBUG GetCampaign: map miss id=%s len(campaigns)=%d — trying DB\n",
-			campaignID, len(m.campaigns))
-		rc, err := m.repo.GetByID(ctx, campaignID)
-		if err != nil {
-			return nil, ErrCampaignNotFound
-		}
-		return m.fromRepositoryCampaign(rc), nil
-	}
+        if !exists {
+                rc, err := m.repo.GetByID(ctx, campaignID)
+                if err != nil {
+                        return nil, ErrCampaignNotFound
+                }
+                return m.fromRepositoryCampaign(rc), nil
+        }
 
-	instance.mu.RLock()
-	defer instance.mu.RUnlock()
-	return instance.Campaign, nil
+        instance.mu.RLock()
+        defer instance.mu.RUnlock()
+        return instance.Campaign, nil
 }
 
 
 func (m *Manager) GetCampaignStats(ctx context.Context, campaignID string) (*CampaignStats, error) {
-	fmt.Printf("DEBUG GetCampaignStats: campaignID=%s len(m.campaigns)=%d\n",
-		campaignID, len(m.campaigns))
+        m.mu.RLock()
+        instance, exists := m.campaigns[campaignID]
+        m.mu.RUnlock()
 
-	m.mu.RLock()
-	instance, exists := m.campaigns[campaignID]
-	m.mu.RUnlock()
+        if !exists {
+                rc, err := m.repo.GetByID(ctx, campaignID)
+                if err != nil {
+                        return nil, ErrCampaignNotFound
+                }
+                return &CampaignStats{
+                        TotalRecipients: int64(rc.TotalRecipients),
+                        Sent:            int64(rc.SentCount),
+                        Failed:          int64(rc.FailedCount),
+                        Pending:         int64(rc.PendingCount),
+                        SuccessRate:     rc.SuccessRate,
+                        Throughput:      rc.Throughput,
+                }, nil
+        }
 
-	if !exists {
-		fmt.Printf("DEBUG GetCampaignStats: map miss — trying DB\n")
-		rc, err := m.repo.GetByID(ctx, campaignID)
-		if err != nil {
-			return nil, ErrCampaignNotFound
-		}
-		return &CampaignStats{
-			TotalRecipients: int64(rc.TotalRecipients),
-			Sent:            int64(rc.SentCount),
-			Failed:          int64(rc.FailedCount),
-			Pending:         int64(rc.PendingCount),
-			SuccessRate:     rc.SuccessRate,
-			Throughput:      rc.Throughput,
-		}, nil
-	}
+        instance.Stats.mu.RLock()
+        defer instance.Stats.mu.RUnlock()
 
-	instance.Stats.mu.RLock()
-	defer instance.Stats.mu.RUnlock()
-
-	return &CampaignStats{
-		TotalRecipients:   instance.Stats.TotalRecipients,
-		Sent:              instance.Stats.Sent,
-		Failed:            instance.Stats.Failed,
-		Pending:           instance.Stats.Pending,
-		Skipped:           instance.Stats.Skipped,
-		SuccessRate:       instance.Stats.SuccessRate,
-		Throughput:        instance.Stats.Throughput,
-		AverageSendTime:   instance.Stats.AverageSendTime,
-		EstimatedComplete: instance.Stats.EstimatedComplete,
-	}, nil
+        return &CampaignStats{
+                TotalRecipients:   instance.Stats.TotalRecipients,
+                Sent:              instance.Stats.Sent,
+                Failed:            instance.Stats.Failed,
+                Pending:           instance.Stats.Pending,
+                Skipped:           instance.Stats.Skipped,
+                SuccessRate:       instance.Stats.SuccessRate,
+                Throughput:        instance.Stats.Throughput,
+                AverageSendTime:   instance.Stats.AverageSendTime,
+                EstimatedComplete: instance.Stats.EstimatedComplete,
+        }, nil
 }
 
 func (m *Manager) ListCampaigns() []*models.Campaign {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+        m.mu.RLock()
+        defer m.mu.RUnlock()
 
-	campaigns := make([]*models.Campaign, 0, len(m.campaigns))
-	for _, instance := range m.campaigns {
-		instance.mu.RLock()
-		campaigns = append(campaigns, instance.Campaign)
-		instance.mu.RUnlock()
-	}
+        campaigns := make([]*models.Campaign, 0, len(m.campaigns))
+        for _, instance := range m.campaigns {
+                instance.mu.RLock()
+                campaigns = append(campaigns, instance.Campaign)
+                instance.mu.RUnlock()
+        }
 
-	return campaigns
+        return campaigns
 }
 
 func (m *Manager) DeleteCampaign(ctx context.Context, campaignID string) error {
-	m.mu.Lock()
-	instance, exists := m.campaigns[campaignID]
-	if !exists {
-		m.mu.Unlock()
-		return ErrCampaignNotFound
-	}
-	delete(m.campaigns, campaignID)
-	m.mu.Unlock()
+        m.mu.Lock()
+        instance, exists := m.campaigns[campaignID]
+        if !exists {
+                m.mu.Unlock()
+                return ErrCampaignNotFound
+        }
+        delete(m.campaigns, campaignID)
+        m.mu.Unlock()
 
-	instance.mu.Lock()
-	if instance.State.Status == models.CampaignStatusRunning {
-		instance.mu.Unlock()
-		return fmt.Errorf("%w: cannot delete running campaign", ErrInvalidCampaignState)
-	}
-	instance.mu.Unlock()
+        instance.mu.Lock()
+        if instance.State.Status == models.CampaignStatusRunning {
+                instance.mu.Unlock()
+                return fmt.Errorf("%w: cannot delete running campaign", ErrInvalidCampaignState)
+        }
+        instance.mu.Unlock()
 
-	if err := m.repo.Delete(ctx, campaignID); err != nil {
-		return fmt.Errorf("failed to delete campaign: %w", err)
-	}
+        if err := m.repo.Delete(ctx, campaignID); err != nil {
+                return fmt.Errorf("failed to delete campaign: %w", err)
+        }
 
-	if m.persistence != nil {
-		if err := m.persistence.DeleteState(ctx, campaignID); err != nil {
-			m.log.Error("failed to delete campaign state",
-				logger.String("campaign_id", campaignID),
-				logger.String("error", err.Error()))
-		}
-	}
+        if m.persistence != nil {
+                if err := m.persistence.DeleteState(ctx, campaignID); err != nil {
+                        m.log.Error("failed to delete campaign state",
+                                logger.String("campaign_id", campaignID),
+                                logger.String("error", err.Error()))
+                }
+        }
 
-	m.log.Info("campaign deleted", logger.String("campaign_id", campaignID))
+        m.log.Info("campaign deleted", logger.String("campaign_id", campaignID))
 
-	m.broadcastCampaignEvent(campaignID, "deleted", nil)
+        m.broadcastCampaignEvent(campaignID, "deleted", nil)
 
-	return nil
+        return nil
 }
 func (m *Manager) monitorCampaign(ctx context.Context, instance *CampaignInstance) {
     ticker := time.NewTicker(5 * time.Second)
@@ -523,14 +542,14 @@ func (m *Manager) monitorCampaign(ctx context.Context, instance *CampaignInstanc
         case <-ticker.C:
             instance.mu.RLock()
             status := instance.State.Status
-            executor := instance.Executor // ✅ capture under lock
+            executor := instance.Executor
             instance.mu.RUnlock()
 
             if status != models.CampaignStatusRunning {
                 return
             }
 
-            // ✅ Guard before calling any method on executor
+
             if executor == nil {
                 m.log.Warn("monitorCampaign: executor nil, stopping monitor",
                     logger.String("campaign_id", instance.Campaign.ID))
@@ -549,66 +568,96 @@ func (m *Manager) monitorCampaign(ctx context.Context, instance *CampaignInstanc
 
 
 func (m *Manager) completeCampaign(ctx context.Context, instance *CampaignInstance) {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
+        instance.mu.Lock()
+        defer instance.mu.Unlock()
 
-	instance.State.Status = models.CampaignStatusCompleted
-	instance.Campaign.Status = models.CampaignStatusCompleted
-	instance.EndTime = time.Now()
-	instance.Campaign.CompletedAt = &instance.EndTime
-	instance.Campaign.UpdatedAt = time.Now()
+        if instance.Executor != nil {
+                execStats := instance.Executor.GetStats()
+                instance.Stats.Sent = execStats.Sent
+                instance.Stats.Failed = execStats.Failed
+                instance.Stats.Pending = execStats.Pending
+                if execStats.Total > 0 {
+                        instance.Stats.TotalRecipients = execStats.Total
+                } else {
+                        instance.Stats.TotalRecipients = execStats.Sent + execStats.Failed
+                }
+        }
 
-	if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
-		m.log.Error("failed to update completed campaign",
-			logger.String("campaign_id", instance.Campaign.ID),
-			logger.String("error", err.Error()))
-	}
+        instance.State.Status = models.CampaignStatusCompleted
+        instance.Campaign.Status = models.CampaignStatusCompleted
+        instance.EndTime = time.Now()
+        instance.Campaign.CompletedAt = &instance.EndTime
+        instance.Campaign.UpdatedAt = time.Now()
 
-	if err := m.repo.UpdateProgress(ctx, instance.Campaign.ID,
-		int(instance.Stats.Sent),
-		int(instance.Stats.Failed),
-		int(instance.Stats.Pending),
-	); err != nil {
-		m.log.Error("failed to persist final stats on complete",
-			logger.String("campaign_id", instance.Campaign.ID),
-			logger.String("error", err.Error()))
-	}
+        totalRecip := instance.Stats.TotalRecipients
+        if totalRecip == 0 {
+                totalRecip = instance.Stats.Sent + instance.Stats.Failed
+        }
+        instance.Campaign.TotalRecipients = totalRecip
+        instance.Campaign.Stats.TotalSent = instance.Stats.Sent
+        instance.Campaign.Stats.TotalFailed = instance.Stats.Failed
+        instance.Campaign.Stats.TotalDelivered = instance.Stats.Sent
+        if totalRecip > 0 {
+                instance.Campaign.Stats.DeliveryRate = float64(instance.Stats.Sent) / float64(totalRecip) * 100
+        }
+        instance.Campaign.Progress.TotalRecipients = totalRecip
+        instance.Campaign.Progress.ProcessedRecipients = instance.Stats.Sent + instance.Stats.Failed
+        instance.Campaign.Progress.RemainingRecipients = 0
+        if totalRecip > 0 {
+                instance.Campaign.Progress.ProgressPercentage = float64(instance.Stats.Sent+instance.Stats.Failed) / float64(totalRecip) * 100
+        }
 
-	if m.persistence != nil {
-		if err := m.persistence.SaveState(ctx, instance.Campaign.ID, instance.State); err != nil {
-			m.log.Error("failed to save completed campaign state",
-				logger.String("campaign_id", instance.Campaign.ID),
-				logger.String("error", err.Error()))
-		}
-	}
+        if err := m.repo.Update(ctx, m.toRepositoryCampaign(instance.Campaign)); err != nil {
+                m.log.Error("failed to update completed campaign",
+                        logger.String("campaign_id", instance.Campaign.ID),
+                        logger.String("error", err.Error()))
+        }
 
-	m.log.Info("campaign completed",
-		logger.String("campaign_id", instance.Campaign.ID),
-		logger.Int64("sent", instance.Stats.Sent),
-		logger.Int64("failed", instance.Stats.Failed),
-		logger.Duration("duration", instance.EndTime.Sub(instance.StartTime)),
-	)
+        if err := m.repo.UpdateProgress(ctx, instance.Campaign.ID,
+                int(instance.Stats.Sent),
+                int(instance.Stats.Failed),
+                int(instance.Stats.Pending),
+        ); err != nil {
+                m.log.Error("failed to persist final stats on complete",
+                        logger.String("campaign_id", instance.Campaign.ID),
+                        logger.String("error", err.Error()))
+        }
 
-	m.broadcastCampaignEvent(instance.Campaign.ID, "completed", map[string]interface{}{
-		"end_time": instance.EndTime,
-		"stats":    instance.Stats,
-	})
+        if m.persistence != nil {
+                if err := m.persistence.SaveState(ctx, instance.Campaign.ID, instance.State); err != nil {
+                        m.log.Error("failed to save completed campaign state",
+                                logger.String("campaign_id", instance.Campaign.ID),
+                                logger.String("error", err.Error()))
+                }
+        }
+
+        m.log.Info("campaign completed",
+                logger.String("campaign_id", instance.Campaign.ID),
+                logger.Int64("sent", instance.Stats.Sent),
+                logger.Int64("failed", instance.Stats.Failed),
+                logger.Duration("duration", instance.EndTime.Sub(instance.StartTime)),
+        )
+
+        m.broadcastCampaignEvent(instance.Campaign.ID, "completed", map[string]interface{}{
+                "end_time": instance.EndTime,
+                "stats":    instance.Stats,
+        })
 }
 
 
 func (m *Manager) checkpointLoop(interval time.Duration) {
-	defer m.wg.Done()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+        defer m.wg.Done()
+        ticker := time.NewTicker(interval)
+        defer ticker.Stop()
 
-	for {
-		select {
-		case <-m.shutdownSignal:
-			return
-		case <-ticker.C:
-			m.saveCheckpoints()
-		}
-	}
+        for {
+                select {
+                case <-m.shutdownSignal:
+                        return
+                case <-ticker.C:
+                        m.saveCheckpoints()
+                }
+        }
 }
 
 func (m *Manager) saveCheckpoints() {
@@ -633,7 +682,7 @@ func (m *Manager) saveCheckpoints() {
         pending := int(inst.Stats.Pending)
         inst.mu.RUnlock()
 
-        // ✅ Persist live progress so resume knows where to start
+
         if err := m.repo.UpdateProgress(ctx, campaignID, sent, failed, pending); err != nil {
             m.log.Error("checkpoint save failed",
                 logger.String("campaign_id", campaignID),
@@ -643,8 +692,6 @@ func (m *Manager) saveCheckpoints() {
             inst.mu.Lock()
             inst.LastCheckpoint = time.Now()
             inst.mu.Unlock()
-            fmt.Printf("DEBUG checkpoint saved: id=%s sent=%d failed=%d pending=%d\n",
-                campaignID, sent, failed, pending)
         }
 
         cancel()
@@ -653,22 +700,22 @@ func (m *Manager) saveCheckpoints() {
 
 
 func (m *Manager) cleanupLoop(interval time.Duration) {
-	defer m.wg.Done()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+        defer m.wg.Done()
+        ticker := time.NewTicker(interval)
+        defer ticker.Stop()
 
-	for {
-		select {
-		case <-m.shutdownSignal:
-			return
-		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			if m.cleanup != nil {
-				m.cleanup.performCleanup(ctx)
-			}
-			cancel()
-		}
-	}
+        for {
+                select {
+                case <-m.shutdownSignal:
+                        return
+                case <-ticker.C:
+                        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+                        if m.cleanup != nil {
+                                m.cleanup.performCleanup(ctx)
+                        }
+                        cancel()
+                }
+        }
 }
 
 func (m *Manager) statsUpdateLoop(interval time.Duration) {
@@ -685,7 +732,7 @@ func (m *Manager) statsUpdateLoop(interval time.Duration) {
             for _, instance := range m.campaigns {
                 instance.mu.RLock()
                 isRunning := instance.State.Status == models.CampaignStatusRunning
-                hasExecutor := instance.Executor != nil // ✅ guard
+                hasExecutor := instance.Executor != nil
                 instance.mu.RUnlock()
 
                 if isRunning && hasExecutor {
@@ -698,7 +745,7 @@ func (m *Manager) statsUpdateLoop(interval time.Duration) {
 }
 
 func (m *Manager) updateCampaignStats(instance *CampaignInstance) {
-    // ✅ Double-check inside the goroutine — Executor could be nil if Start failed
+
     instance.mu.RLock()
     executor := instance.Executor
     instance.mu.RUnlock()
@@ -745,19 +792,19 @@ func (m *Manager) updateCampaignStats(instance *CampaignInstance) {
 
 
 func (m *Manager) validateCampaign(campaign *models.Campaign) error {
-	if campaign.Name == "" {
-		return errors.New("campaign name is required")
-	}
-	if len(campaign.TemplateIDs) == 0 {
-		return errors.New("at least one template is required")
-	}
-	if len(campaign.AccountIDs) == 0 {
-		return errors.New("at least one account is required")
-	}
-	// REMOVED recipient validation - recipients loaded lazily from file during execution
-	return nil
+        if campaign.Name == "" {
+                return errors.New("campaign name is required")
+        }
+        if len(campaign.TemplateIDs) == 0 {
+                return errors.New("at least one template is required")
+        }
+        if len(campaign.AccountIDs) == 0 {
+                return errors.New("at least one account is required")
+        }
+        // REMOVED recipient validation - recipients loaded lazily from file during execution
+        return nil
 }
-// ✅ Always hold m.mu.RLock when iterating m.campaigns
+
 func (m *Manager) getRunningCount() int {
     m.mu.RLock()
     defer m.mu.RUnlock()
@@ -765,7 +812,8 @@ func (m *Manager) getRunningCount() int {
     count := 0
     for _, inst := range m.campaigns {
         inst.mu.RLock()
-        if inst.State.Status == models.CampaignStatusRunning {
+        s := inst.State.Status
+        if s == models.CampaignStatusRunning {
             count++
         }
         inst.mu.RUnlock()
@@ -773,166 +821,177 @@ func (m *Manager) getRunningCount() int {
     return count
 }
 
+// SetMaxConcurrent updates the maximum number of campaigns that may run at
+// the same time.  It is safe to call from any goroutine and takes effect
+// immediately for all subsequent StartCampaign calls.
+func (m *Manager) SetMaxConcurrent(n int) {
+    // -1 = block all, 0 = unlimited, >0 = cap. Clamp only below -1.
+    if n < -1 {
+        n = -1
+    }
+    m.mu.Lock()
+    m.maxConcurrent = n
+    m.mu.Unlock()
+}
+
+// GetMaxConcurrent returns the current concurrent campaign limit.
+func (m *Manager) GetMaxConcurrent() int {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    return m.maxConcurrent
+}
+
 
 func (m *Manager) broadcastCampaignEvent(campaignID, event string, data map[string]interface{}) {
-	if m.hub == nil {
-		return
-	}
+        if m.hub == nil {
+                return
+        }
 
-	message := map[string]interface{}{
-		"type":        "campaign_event",
-		"campaign_id": campaignID,
-		"event":       event,
-		"timestamp":   time.Now(),
-	}
+        message := map[string]interface{}{
+                "type":        "campaign_event",
+                "campaign_id": campaignID,
+                "event":       event,
+                "timestamp":   time.Now(),
+        }
 
-	if data != nil {
-		message["data"] = data
-	}
+        if data != nil {
+                message["data"] = data
+        }
 
-	// ✅ Fixed: Convert to websocket.Message
-	dataJSON, _ := json.Marshal(message)
-	m.hub.Broadcast(&websocket.Message{
-		Type: "campaign_event",
-		Data: json.RawMessage(dataJSON),
-	})
+
+        dataJSON, _ := json.Marshal(message)
+        m.hub.Broadcast(&websocket.Message{
+                Type: "campaign_event",
+                Data: json.RawMessage(dataJSON),
+        })
 }
 
 func (m *Manager) Shutdown(ctx context.Context) error {
-	m.log.Info("shutting down campaign manager")
+        m.log.Info("shutting down campaign manager")
 
-	close(m.shutdownSignal)
+        close(m.shutdownSignal)
 
-	m.mu.RLock()
-	runningCampaigns := make([]*CampaignInstance, 0)
-	for _, instance := range m.campaigns {
-		instance.mu.RLock()
-		if instance.State.Status == models.CampaignStatusRunning {
-			runningCampaigns = append(runningCampaigns, instance)
-		}
-		instance.mu.RUnlock()
-	}
-	m.mu.RUnlock()
+        m.mu.RLock()
+        runningCampaigns := make([]*CampaignInstance, 0)
+        for _, instance := range m.campaigns {
+                instance.mu.RLock()
+                if instance.State.Status == models.CampaignStatusRunning {
+                        runningCampaigns = append(runningCampaigns, instance)
+                }
+                instance.mu.RUnlock()
+        }
+        m.mu.RUnlock()
 
-	for _, instance := range runningCampaigns {
-		if err := m.PauseCampaign(ctx, instance.Campaign.ID); err != nil {
-			m.log.Error("failed to pause campaign during shutdown",
-				logger.String("campaign_id", instance.Campaign.ID),
-				logger.String("error", err.Error()))
-		}
-	}
+        for _, instance := range runningCampaigns {
+                if err := m.PauseCampaign(ctx, instance.Campaign.ID); err != nil {
+                        m.log.Error("failed to pause campaign during shutdown",
+                                logger.String("campaign_id", instance.Campaign.ID),
+                                logger.String("error", err.Error()))
+                }
+        }
 
-	done := make(chan struct{})
-	go func() {
-		m.wg.Wait()
-		close(done)
-	}()
+        done := make(chan struct{})
+        go func() {
+                m.wg.Wait()
+                close(done)
+        }()
 
-	select {
-	case <-done:
-		m.log.Info("campaign manager shutdown completed")
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+        select {
+        case <-done:
+                m.log.Info("campaign manager shutdown completed")
+                return nil
+        case <-ctx.Done():
+                return ctx.Err()
+        }
 }
 func (m *Manager) toRepositoryCampaign(campaign *models.Campaign) *repository.Campaign {
-	fmt.Printf("🟢 DEBUG toRepositoryCampaign: START id=%s\n", campaign.ID)
+        now := time.Now()
+        createdAt := campaign.CreatedAt
+        if createdAt.IsZero() {
+                createdAt = now
+        }
+        updatedAt := campaign.UpdatedAt
+        if updatedAt.IsZero() {
+                updatedAt = now
+        }
 
-	now := time.Now()
-	createdAt := campaign.CreatedAt
-	if createdAt.IsZero() {
-		createdAt = now
-	}
-	updatedAt := campaign.UpdatedAt
-	if updatedAt.IsZero() {
-		updatedAt = now
-	}
+        state := "idle"
 
-	state := "idle"
+        priorityMap := map[models.CampaignPriority]int{
+                models.CampaignPriorityLow:      1,
+                models.CampaignPriorityNormal:   2,
+                models.CampaignPriorityHigh:     3,
+                models.CampaignPriorityCritical: 4,
+        }
+        priority, ok := priorityMap[campaign.Priority]
+        if !ok {
+                priority = 2
+        }
 
-	priorityMap := map[models.CampaignPriority]int{
-		models.CampaignPriorityLow:      1,
-		models.CampaignPriorityNormal:   2,
-		models.CampaignPriorityHigh:     3,
-		models.CampaignPriorityCritical: 4,
-	}
-	priority, ok := priorityMap[campaign.Priority]
-	if !ok {
-		priority = 2
-	}
+        configMap := make(map[string]interface{})
+        if configBytes, err := json.Marshal(campaign.Config); err == nil {
+                json.Unmarshal(configBytes, &configMap)
+        }
 
-	configMap := make(map[string]interface{})
-	if configBytes, err := json.Marshal(campaign.Config); err == nil {
-		json.Unmarshal(configBytes, &configMap)
-	}
+        status := string(campaign.Status)
+        if status == "" {
+                status = "created"
+        }
 
-	status := string(campaign.Status)
-	if status == "" {
-		status = "created"
-	}
+        // nil-safe Schedule access — THIS was the panic
+        var scheduledAt *time.Time
+        if campaign.Schedule != nil {
+                scheduledAt = campaign.Schedule.ScheduledStartTime
+        }
 
-	// nil-safe Schedule access — THIS was the panic
-	var scheduledAt *time.Time
-	if campaign.Schedule != nil {
-		scheduledAt = campaign.Schedule.ScheduledStartTime
-	}
+        repoCamp := &repository.Campaign{
+                ID:              campaign.ID,
+                Name:            campaign.Name,
+                Description:     campaign.Description,
+                Status:          status,
+                State:           state,
+                Priority:        priority,
+                ScheduledAt:     scheduledAt, // safe now
+                TotalRecipients: int(campaign.TotalRecipients),
+                Config:          configMap,
+                TemplateIDs:     campaign.TemplateIDs,
+                AccountIDs:      campaign.AccountIDs,
+                RecipientListID: nilIfEmpty(campaign.RecipientGroupID),
+                ProxyIDs:        campaign.ProxyIDs,
+                Tags:            campaign.Tags,
+                Metadata:        map[string]interface{}{},
+                MaxRetries:      3,
+                CreatedBy:       campaign.CreatedBy,
+                CreatedAt:       createdAt,
+                UpdatedAt:       updatedAt,
+                StartedAt:       campaign.StartedAt,
+                CompletedAt:     campaign.CompletedAt,
+        }
 
-	fmt.Printf("🟢 DEBUG toRepositoryCampaign: status=%s state=%s priority=%d templateIDs=%v accountIDs=%v scheduledAt=%v\n",
-		status, state, priority, campaign.TemplateIDs, campaign.AccountIDs, scheduledAt)
-
-	repoCamp := &repository.Campaign{
-		ID:              campaign.ID,
-		Name:            campaign.Name,
-		Description:     campaign.Description,
-		Status:          status,
-		State:           state,
-		Priority:        priority,
-		ScheduledAt:     scheduledAt, // safe now
-		TotalRecipients: int(campaign.TotalRecipients),
-		Config:          configMap,
-		TemplateIDs:     campaign.TemplateIDs,
-		AccountIDs:      campaign.AccountIDs,
-		RecipientListID: nil,
-		ProxyIDs:        []string{},
-		Tags:            []string{},
-		Metadata:        map[string]interface{}{},
-		MaxRetries:      3,
-		CreatedBy:       campaign.CreatedBy,
-		CreatedAt:       createdAt,
-		UpdatedAt:       updatedAt,
-		StartedAt:       campaign.StartedAt,
-		CompletedAt:     campaign.CompletedAt,
-	}
-
-	fmt.Printf("🟢 DEBUG toRepositoryCampaign: SUCCESS id=%s\n", repoCamp.ID)
-	return repoCamp
+        return repoCamp
 }
 func (m *Manager) loadFromDB(ctx context.Context) error {
-    fmt.Printf("DEBUG loadFromDB: START — calling repo.List\n")
     rows, _, err := m.repo.List(ctx, &repository.CampaignFilter{IncludeArchived: false})
     if err != nil {
         return fmt.Errorf("loadFromDB: %w", err)
     }
-    fmt.Printf("DEBUG loadFromDB: repo.List returned %d rows\n", len(rows))
 
     for _, rc := range rows {
         c := m.fromRepositoryCampaign(rc)
         state := NewCampaignState(c.ID)
         state.Status = c.Status
 
-        // ✅ running on startup = server crashed mid-run → pause, not fail
+
         // Operator can then resume manually or auto-resume below
         if c.Status == models.CampaignStatusRunning {
             c.Status = models.CampaignStatusPaused
             state.Status = models.CampaignStatusPaused
-            fmt.Printf("DEBUG loadFromDB: reset stale running→paused for id=%s\n", c.ID)
             if err := m.repo.Update(ctx, m.toRepositoryCampaign(c)); err != nil {
-                fmt.Printf("DEBUG loadFromDB: failed to persist reset for id=%s: %v\n", c.ID, err)
+                m.log.Error("loadFromDB: failed to persist reset", logger.String("campaign_id", c.ID), logger.String("error", err.Error()))
             }
         }
 
-        // ✅ Restore checkpoint progress into state
+
         state.Progress.ProcessedCount = int64(rc.SentCount + rc.FailedCount)
         state.Progress.SuccessCount = int64(rc.SentCount)
         state.Progress.FailedCount = int64(rc.FailedCount)
@@ -953,38 +1012,63 @@ func (m *Manager) loadFromDB(ctx context.Context) error {
             Campaign:       c,
             State:          state,
             Stats:          stats,
-            LastCheckpoint: rc.UpdatedAt, // ✅ restore last known checkpoint time
+            LastCheckpoint: rc.UpdatedAt,
         }
     }
 
-    fmt.Printf("DEBUG loadFromDB: loaded %d campaigns into memory\n", len(m.campaigns))
     return nil
 }
 
 // fromRepositoryCampaign converts a flat repository.Campaign row to *models.Campaign.
 func (m *Manager) fromRepositoryCampaign(rc *repository.Campaign) *models.Campaign {
-	c := &models.Campaign{
-		ID:              rc.ID,
-		Name:            rc.Name,
-		Description:     rc.Description,
-		Status:          models.CampaignStatus(rc.Status),
-		TotalRecipients: int64(rc.TotalRecipients),
-		TemplateIDs:     rc.TemplateIDs,
-		AccountIDs:      rc.AccountIDs,
-		CreatedBy:       rc.CreatedBy,
-		CreatedAt:       rc.CreatedAt,
-		UpdatedAt:       rc.UpdatedAt,
-		StartedAt:       rc.StartedAt,
-		CompletedAt:     rc.CompletedAt,
-	}
-	if rc.ScheduledAt != nil {
-		c.Schedule = &models.CampaignSchedule{
-			ScheduledStartTime: rc.ScheduledAt,
-		}
-	}
-	if len(rc.Config) > 0 {
-		configBytes, _ := json.Marshal(rc.Config)
-		json.Unmarshal(configBytes, &c.Config) //nolint:errcheck — best-effort restore
-	}
-	return c
+        recipientGroupID := ""
+        if rc.RecipientListID != nil {
+                recipientGroupID = *rc.RecipientListID
+        }
+        c := &models.Campaign{
+                ID:               rc.ID,
+                Name:             rc.Name,
+                Description:      rc.Description,
+                Status:           models.CampaignStatus(rc.Status),
+                TotalRecipients:  int64(rc.TotalRecipients),
+                TemplateIDs:      rc.TemplateIDs,
+                AccountIDs:       rc.AccountIDs,
+                RecipientGroupID: recipientGroupID,
+                ProxyIDs:         rc.ProxyIDs,
+                CreatedBy:        rc.CreatedBy,
+                CreatedAt:        rc.CreatedAt,
+                UpdatedAt:        rc.UpdatedAt,
+                StartedAt:        rc.StartedAt,
+                CompletedAt:      rc.CompletedAt,
+        }
+        c.Stats.TotalSent = int64(rc.SentCount)
+        c.Stats.TotalFailed = int64(rc.FailedCount)
+        c.Stats.TotalDelivered = int64(rc.SentCount)
+        total := int64(rc.TotalRecipients)
+        if total == 0 {
+                total = int64(rc.SentCount + rc.FailedCount)
+        }
+        if total > 0 {
+                c.Stats.DeliveryRate = float64(rc.SentCount) / float64(total) * 100
+                c.Progress.ProgressPercentage = float64(rc.SentCount+rc.FailedCount) / float64(total) * 100
+        }
+        c.Progress.TotalRecipients = total
+        c.Progress.ProcessedRecipients = int64(rc.SentCount + rc.FailedCount)
+        if rc.ScheduledAt != nil {
+                c.Schedule = &models.CampaignSchedule{
+                        ScheduledStartTime: rc.ScheduledAt,
+                }
+        }
+        if len(rc.Config) > 0 {
+                configBytes, _ := json.Marshal(rc.Config)
+                json.Unmarshal(configBytes, &c.Config) //nolint:errcheck — best-effort restore
+        }
+        return c
+}
+
+func nilIfEmpty(s string) *string {
+        if s == "" {
+                return nil
+        }
+        return &s
 }

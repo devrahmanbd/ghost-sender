@@ -1,597 +1,621 @@
 package handlers
 
 import (
-	"archive/zip"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
+        "archive/zip"
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+        "os"
+        "path/filepath"
+        "strings"
+        "time"
     "github.com/gorilla/mux"
 
-	"email-campaign-system/internal/api/websocket"
-	"email-campaign-system/internal/storage/files"
-	"email-campaign-system/pkg/errors"
-	"email-campaign-system/pkg/logger"
-	"email-campaign-system/pkg/validator"
+        "email-campaign-system/internal/api/websocket"
+        "email-campaign-system/internal/storage/files"
+        "email-campaign-system/pkg/errors"
+        "email-campaign-system/pkg/logger"
+        "email-campaign-system/pkg/validator"
 )
 
+type AttachmentRefresher interface {
+        RefreshTemplates() error
+}
+
 type FileHandler struct {
-	fileStorage  files.Storage
-	wsHub        *websocket.Hub
-	logger       logger.Logger
-	validator    *validator.Validator
-	maxFileSize  int64
-	allowedTypes []string
-	basePath     string
+        fileStorage    files.Storage
+        wsHub          *websocket.Hub
+        logger         logger.Logger
+        validator      *validator.Validator
+        maxFileSize    int64
+        allowedTypes   []string
+        basePath       string
+        attachmentMgr  AttachmentRefresher
 }
 
 func NewFileHandler(
-	fileStorage files.Storage,
-	wsHub *websocket.Hub,
-	logger logger.Logger,
-	validator *validator.Validator,
-	maxFileSize int64,
-	allowedTypes []string,
-	basePath string,
+        fileStorage files.Storage,
+        wsHub *websocket.Hub,
+        logger logger.Logger,
+        validator *validator.Validator,
+        maxFileSize int64,
+        allowedTypes []string,
+        basePath string,
+        opts ...FileHandlerOption,
 ) *FileHandler {
-	return &FileHandler{
-		fileStorage:  fileStorage,
-		wsHub:        wsHub,
-		logger:       logger,
-		validator:    validator,
-		maxFileSize:  maxFileSize,
-		allowedTypes: allowedTypes,
-		basePath:     basePath,
-	}
+        h := &FileHandler{
+                fileStorage:  fileStorage,
+                wsHub:        wsHub,
+                logger:       logger,
+                validator:    validator,
+                maxFileSize:  maxFileSize,
+                allowedTypes: allowedTypes,
+                basePath:     basePath,
+        }
+        for _, o := range opts {
+                o(h)
+        }
+        return h
+}
+
+type FileHandlerOption func(*FileHandler)
+
+func WithAttachmentManager(mgr AttachmentRefresher) FileHandlerOption {
+        return func(h *FileHandler) {
+                h.attachmentMgr = mgr
+        }
 }
 
 type FileInfo struct {
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	Type      string    `json:"type"`
-	MimeType  string    `json:"mime_type"`
-	IsDir     bool      `json:"is_dir"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+        Name      string    `json:"name"`
+        Path      string    `json:"path"`
+        Size      int64     `json:"size"`
+        Type      string    `json:"type"`
+        MimeType  string    `json:"mime_type"`
+        IsDir     bool      `json:"is_dir"`
+        CreatedAt time.Time `json:"created_at"`
+        UpdatedAt time.Time `json:"updated_at"`
 }
 
 type UploadResponse struct {
-	Success  bool   `json:"success"`
-	Message  string `json:"message"`
-	FileName string `json:"file_name"`
-	FilePath string `json:"file_path"`
-	FileSize int64  `json:"file_size"`
-	FileType string `json:"file_type"`
+        Success  bool   `json:"success"`
+        Message  string `json:"message"`
+        FileName string `json:"file_name"`
+        FilePath string `json:"file_path"`
+        FileSize int64  `json:"file_size"`
+        FileType string `json:"file_type"`
 }
 
 type ZIPUploadResponse struct {
-	Success       bool     `json:"success"`
-	Message       string   `json:"message"`
-	ExtractedPath string   `json:"extracted_path"`
-	FilesCount    int      `json:"files_count"`
-	Files         []string `json:"files"`
+        Success       bool     `json:"success"`
+        Message       string   `json:"message"`
+        ExtractedPath string   `json:"extracted_path"`
+        FilesCount    int      `json:"files_count"`
+        Files         []string `json:"files"`
 }
 
 func (h *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+        ctx := r.Context()
 
-	if err := r.ParseMultipartForm(h.maxFileSize); err != nil {
-		h.respondError(w, errors.BadRequest("File too large or invalid form data"))
-		return
-	}
+        if err := r.ParseMultipartForm(h.maxFileSize); err != nil {
+                h.respondError(w, errors.BadRequest("File too large or invalid form data"))
+                return
+        }
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		h.respondError(w, errors.BadRequest("No file uploaded"))
-		return
-	}
-	defer file.Close()
+        file, header, err := r.FormFile("file")
+        if err != nil {
+                h.respondError(w, errors.BadRequest("No file uploaded"))
+                return
+        }
+        defer file.Close()
 
-	category := r.FormValue("category")
-	if category == "" {
-		category = "general"
-	}
+        category := r.FormValue("category")
+        if category == "" {
+                category = "general"
+        }
 
-	if !h.isValidCategory(category) {
-		h.respondError(w, errors.BadRequest("Invalid file category"))
-		return
-	}
+        if !h.isValidCategory(category) {
+                h.respondError(w, errors.BadRequest("Invalid file category"))
+                return
+        }
 
-	if header.Size > h.maxFileSize {
-		h.respondError(w, errors.BadRequest(fmt.Sprintf("File size exceeds maximum allowed size of %d bytes", h.maxFileSize)))
-		return
-	}
+        if header.Size > h.maxFileSize {
+                h.respondError(w, errors.BadRequest(fmt.Sprintf("File size exceeds maximum allowed size of %d bytes", h.maxFileSize)))
+                return
+        }
 
-	ext := filepath.Ext(header.Filename)
-	if !h.isAllowedFileType(ext) {
-		h.respondError(w, errors.BadRequest("File type not allowed"))
-		return
-	}
+        ext := filepath.Ext(header.Filename)
+        if !h.isAllowedFileType(ext) {
+                h.respondError(w, errors.BadRequest("File type not allowed"))
+                return
+        }
 
-	if err := h.validateFileName(header.Filename); err != nil {
-		h.respondError(w, errors.BadRequest("Invalid file name: "+err.Error()))
-		return
-	}
+        if err := h.validateFileName(header.Filename); err != nil {
+                h.respondError(w, errors.BadRequest("Invalid file name: "+err.Error()))
+                return
+        }
 
-	filePath := filepath.Join(category, header.Filename)
+        filePath := filepath.Join(category, header.Filename)
 
-	if err := h.fileStorage.WriteReader(ctx, filePath, file); err != nil {
-		h.logger.Error("Failed to save file", logger.String("filename", header.Filename), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to save file"))
-		return
-	}
+        if err := h.fileStorage.WriteReader(ctx, filePath, file); err != nil {
+                h.logger.Error("Failed to save file", logger.String("filename", header.Filename), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to save file"))
+                return
+        }
 
-	h.logger.Info("File uploaded successfully", logger.String("filename", header.Filename), logger.String("path", filePath), logger.Int64("size", header.Size))
+        h.logger.Info("File uploaded successfully", logger.String("filename", header.Filename), logger.String("path", filePath), logger.Int64("size", header.Size))
 
-	dataJSON, _ := json.Marshal(map[string]interface{}{
-		"filename": header.Filename,
-		"category": category,
-		"size":     header.Size,
-	})
+        dataJSON, _ := json.Marshal(map[string]interface{}{
+                "filename": header.Filename,
+                "category": category,
+                "size":     header.Size,
+        })
 
-	h.wsHub.Broadcast(&websocket.Message{
-		Type: "file_uploaded",
-		Data: json.RawMessage(dataJSON),
-	})
+        h.wsHub.Broadcast(&websocket.Message{
+                Type: "file_uploaded",
+                Data: json.RawMessage(dataJSON),
+        })
 
-	response := UploadResponse{
-		Success:  true,
-		Message:  "File uploaded successfully",
-		FileName: header.Filename,
-		FilePath: filePath,
-		FileSize: header.Size,
-		FileType: ext,
-	}
+        if (category == "templates" || category == "attachments") && h.attachmentMgr != nil {
+                if err := h.attachmentMgr.RefreshTemplates(); err != nil {
+                        h.logger.Warn("Failed to refresh attachment templates after upload", logger.Error(err))
+                }
+        }
 
-	h.respondJSON(w, http.StatusOK, response)
+        response := UploadResponse{
+                Success:  true,
+                Message:  "File uploaded successfully",
+                FileName: header.Filename,
+                FilePath: filePath,
+                FileSize: header.Size,
+                FileType: ext,
+        }
+
+        h.respondJSON(w, http.StatusOK, response)
 }
 
 func (h *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	category := vars["category"]
-	filename := vars["filename"]
+        ctx := r.Context()
+        vars := mux.Vars(r)
+        category := vars["category"]
+        filename := vars["filename"]
 
-	if !h.isValidCategory(category) {
-		h.respondError(w, errors.BadRequest("Invalid file category"))
-		return
-	}
+        if !h.isValidCategory(category) {
+                h.respondError(w, errors.BadRequest("Invalid file category"))
+                return
+        }
 
-	if err := h.validateFileName(filename); err != nil {
-		h.respondError(w, errors.BadRequest("Invalid file name"))
-		return
-	}
+        if err := h.validateFileName(filename); err != nil {
+                h.respondError(w, errors.BadRequest("Invalid file name"))
+                return
+        }
 
-	filePath := filepath.Join(category, filename)
+        filePath := filepath.Join(category, filename)
 
-	exists, err := h.fileStorage.Exists(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to check file"))
-		return
-	}
+        exists, err := h.fileStorage.Exists(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to check file"))
+                return
+        }
 
-	if !exists {
-		h.respondError(w, errors.NotFound("file_not_found", "File not found"))
-		return
-	}
+        if !exists {
+                h.respondError(w, errors.NotFound("file_not_found", "File not found"))
+                return
+        }
 
-	stream, err := h.fileStorage.ReadStream(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to open file", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to open file"))
-		return
-	}
-	defer stream.Close()
+        stream, err := h.fileStorage.ReadStream(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to open file", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to open file"))
+                return
+        }
+        defer stream.Close()
 
-	fileInfo, err := h.fileStorage.GetInfo(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to get file stats", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to get file info"))
-		return
-	}
+        fileInfo, err := h.fileStorage.GetInfo(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to get file stats", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to get file info"))
+                return
+        }
 
-	contentType := h.getContentType(filename)
+        contentType := h.getContentType(filename)
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size))
+        w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+        w.Header().Set("Content-Type", contentType)
+        w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size))
 
-	if _, err := io.Copy(w, stream); err != nil {
-		h.logger.Error("Failed to send file", logger.String("path", filePath), logger.Error(err))
-		return
-	}
+        if _, err := io.Copy(w, stream); err != nil {
+                h.logger.Error("Failed to send file", logger.String("path", filePath), logger.Error(err))
+                return
+        }
 
-	h.logger.Info("File downloaded", logger.String("filename", filename), logger.String("category", category))
+        h.logger.Info("File downloaded", logger.String("filename", filename), logger.String("category", category))
 }
 
 func (h *FileHandler) UploadZIP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+        ctx := r.Context()
 
-	if err := r.ParseMultipartForm(h.maxFileSize); err != nil {
-		h.respondError(w, errors.BadRequest("File too large or invalid form data"))
-		return
-	}
+        if err := r.ParseMultipartForm(h.maxFileSize); err != nil {
+                h.respondError(w, errors.BadRequest("File too large or invalid form data"))
+                return
+        }
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		h.respondError(w, errors.BadRequest("No file uploaded"))
-		return
-	}
-	defer file.Close()
+        file, header, err := r.FormFile("file")
+        if err != nil {
+                h.respondError(w, errors.BadRequest("No file uploaded"))
+                return
+        }
+        defer file.Close()
 
-	if !strings.HasSuffix(strings.ToLower(header.Filename), ".zip") {
-		h.respondError(w, errors.BadRequest("Only ZIP files are allowed"))
-		return
-	}
+        if !strings.HasSuffix(strings.ToLower(header.Filename), ".zip") {
+                h.respondError(w, errors.BadRequest("Only ZIP files are allowed"))
+                return
+        }
 
-	if header.Size > h.maxFileSize {
-		h.respondError(w, errors.BadRequest(fmt.Sprintf("File size exceeds maximum allowed size of %d bytes", h.maxFileSize)))
-		return
-	}
+        if header.Size > h.maxFileSize {
+                h.respondError(w, errors.BadRequest(fmt.Sprintf("File size exceeds maximum allowed size of %d bytes", h.maxFileSize)))
+                return
+        }
 
-	tempFile, err := os.CreateTemp("", "campaign-*.zip")
-	if err != nil {
-		h.logger.Error("Failed to create temp file", logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to process ZIP file"))
-		return
-	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+        tempFile, err := os.CreateTemp("", "campaign-*.zip")
+        if err != nil {
+                h.logger.Error("Failed to create temp file", logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to process ZIP file"))
+                return
+        }
+        defer os.Remove(tempFile.Name())
+        defer tempFile.Close()
 
-	if _, err := io.Copy(tempFile, file); err != nil {
-		h.logger.Error("Failed to copy ZIP file", logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to process ZIP file"))
-		return
-	}
+        if _, err := io.Copy(tempFile, file); err != nil {
+                h.logger.Error("Failed to copy ZIP file", logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to process ZIP file"))
+                return
+        }
 
-	extractPath := filepath.Join("campaigns", strings.TrimSuffix(header.Filename, ".zip"))
+        extractPath := filepath.Join("campaigns", strings.TrimSuffix(header.Filename, ".zip"))
 
-	if err := h.fileStorage.CreateDir(ctx, extractPath); err != nil {
-		h.logger.Error("Failed to create extraction directory", logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to extract ZIP file"))
-		return
-	}
+        if err := h.fileStorage.CreateDir(ctx, extractPath); err != nil {
+                h.logger.Error("Failed to create extraction directory", logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to extract ZIP file"))
+                return
+        }
 
-	files, err := h.extractZIP(ctx, tempFile.Name(), extractPath)
-	if err != nil {
-		h.logger.Error("Failed to extract ZIP file", logger.Error(err))
-		h.fileStorage.DeleteDir(ctx, extractPath)
-		h.respondError(w, errors.BadRequest("Failed to extract ZIP file: "+err.Error()))
-		return
-	}
+        files, err := h.extractZIP(ctx, tempFile.Name(), extractPath)
+        if err != nil {
+                h.logger.Error("Failed to extract ZIP file", logger.Error(err))
+                h.fileStorage.DeleteDir(ctx, extractPath)
+                h.respondError(w, errors.BadRequest("Failed to extract ZIP file: "+err.Error()))
+                return
+        }
 
-	h.logger.Info("ZIP file extracted successfully", logger.String("filename", header.Filename), logger.Int("files_count", len(files)))
+        h.logger.Info("ZIP file extracted successfully", logger.String("filename", header.Filename), logger.Int("files_count", len(files)))
 
-	dataJSON, _ := json.Marshal(map[string]interface{}{
-		"filename":    header.Filename,
-		"files_count": len(files),
-		"path":        extractPath,
-	})
+        dataJSON, _ := json.Marshal(map[string]interface{}{
+                "filename":    header.Filename,
+                "files_count": len(files),
+                "path":        extractPath,
+        })
 
-	h.wsHub.Broadcast(&websocket.Message{
-		Type: "zip_extracted",
-		Data: json.RawMessage(dataJSON),
-	})
+        h.wsHub.Broadcast(&websocket.Message{
+                Type: "zip_extracted",
+                Data: json.RawMessage(dataJSON),
+        })
 
-	response := ZIPUploadResponse{
-		Success:       true,
-		Message:       "ZIP file extracted successfully",
-		ExtractedPath: extractPath,
-		FilesCount:    len(files),
-		Files:         files,
-	}
+        response := ZIPUploadResponse{
+                Success:       true,
+                Message:       "ZIP file extracted successfully",
+                ExtractedPath: extractPath,
+                FilesCount:    len(files),
+                Files:         files,
+        }
 
-	h.respondJSON(w, http.StatusOK, response)
+        h.respondJSON(w, http.StatusOK, response)
 }
 
 func (h *FileHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	category := vars["category"]
+        ctx := r.Context()
+        vars := mux.Vars(r)
+        category := vars["category"]
 
-	if !h.isValidCategory(category) {
-		h.respondError(w, errors.BadRequest("Invalid file category"))
-		return
-	}
+        if !h.isValidCategory(category) {
+                h.respondError(w, errors.BadRequest("Invalid file category"))
+                return
+        }
 
-	dirPath := category
+        dirPath := category
 
-	exists, err := h.fileStorage.Exists(ctx, dirPath)
-	if err != nil || !exists {
-		h.respondJSON(w, http.StatusOK, map[string]interface{}{
-			"files": []FileInfo{},
-			"total": 0,
-		})
-		return
-	}
+        exists, err := h.fileStorage.Exists(ctx, dirPath)
+        if err != nil || !exists {
+                h.respondJSON(w, http.StatusOK, map[string]interface{}{
+                        "files": []FileInfo{},
+                        "total": 0,
+                })
+                return
+        }
 
-	fileInfos, err := h.fileStorage.List(ctx, dirPath)
-	if err != nil {
-		h.logger.Error("Failed to read directory", logger.String("path", dirPath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to list files"))
-		return
-	}
+        fileInfos, err := h.fileStorage.List(ctx, dirPath)
+        if err != nil {
+                h.logger.Error("Failed to read directory", logger.String("path", dirPath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to list files"))
+                return
+        }
 
-	files := make([]FileInfo, 0, len(fileInfos))
-	for _, info := range fileInfos {
-		fileInfo := FileInfo{
-			Name:      info.Name,
-			Path:      filepath.Join(category, info.Name),
-			Size:      info.Size,
-			Type:      filepath.Ext(info.Name),
-			MimeType:  info.MimeType,
-			IsDir:     info.IsDir,
-			CreatedAt: info.ModTime,
-			UpdatedAt: info.ModTime,
-		}
-		files = append(files, fileInfo)
-	}
+        files := make([]FileInfo, 0, len(fileInfos))
+        for _, info := range fileInfos {
+                fileInfo := FileInfo{
+                        Name:      info.Name,
+                        Path:      filepath.Join(category, info.Name),
+                        Size:      info.Size,
+                        Type:      filepath.Ext(info.Name),
+                        MimeType:  info.MimeType,
+                        IsDir:     info.IsDir,
+                        CreatedAt: info.ModTime,
+                        UpdatedAt: info.ModTime,
+                }
+                files = append(files, fileInfo)
+        }
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"files": files,
-		"total": len(files),
-	})
+        h.respondJSON(w, http.StatusOK, map[string]interface{}{
+                "files": files,
+                "total": len(files),
+        })
 }
 
 func (h *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	category := vars["category"]
-	filename := vars["filename"]
+        ctx := r.Context()
+        vars := mux.Vars(r)
+        category := vars["category"]
+        filename := vars["filename"]
 
-	if !h.isValidCategory(category) {
-		h.respondError(w, errors.BadRequest("Invalid file category"))
-		return
-	}
+        if !h.isValidCategory(category) {
+                h.respondError(w, errors.BadRequest("Invalid file category"))
+                return
+        }
 
-	if err := h.validateFileName(filename); err != nil {
-		h.respondError(w, errors.BadRequest("Invalid file name"))
-		return
-	}
+        if err := h.validateFileName(filename); err != nil {
+                h.respondError(w, errors.BadRequest("Invalid file name"))
+                return
+        }
 
-	filePath := filepath.Join(category, filename)
+        filePath := filepath.Join(category, filename)
 
-	exists, err := h.fileStorage.Exists(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to check file"))
-		return
-	}
+        exists, err := h.fileStorage.Exists(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to check file"))
+                return
+        }
 
-	if !exists {
-		h.respondError(w, errors.NotFound("file_not_found", "File not found"))
-		return
-	}
+        if !exists {
+                h.respondError(w, errors.NotFound("file_not_found", "File not found"))
+                return
+        }
 
-	if err := h.fileStorage.Delete(ctx, filePath); err != nil {
-		h.logger.Error("Failed to delete file", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to delete file"))
-		return
-	}
+        if err := h.fileStorage.Delete(ctx, filePath); err != nil {
+                h.logger.Error("Failed to delete file", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to delete file"))
+                return
+        }
 
-	h.logger.Info("File deleted successfully", logger.String("filename", filename), logger.String("category", category))
+        h.logger.Info("File deleted successfully", logger.String("filename", filename), logger.String("category", category))
 
-	dataJSON, _ := json.Marshal(map[string]interface{}{
-		"filename": filename,
-		"category": category,
-	})
+        dataJSON, _ := json.Marshal(map[string]interface{}{
+                "filename": filename,
+                "category": category,
+        })
 
-	h.wsHub.Broadcast(&websocket.Message{
-		Type: "file_deleted",
-		Data: json.RawMessage(dataJSON),
-	})
+        h.wsHub.Broadcast(&websocket.Message{
+                Type: "file_deleted",
+                Data: json.RawMessage(dataJSON),
+        })
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "File deleted successfully",
-	})
+        h.respondJSON(w, http.StatusOK, map[string]interface{}{
+                "success": true,
+                "message": "File deleted successfully",
+        })
 }
 
 func (h *FileHandler) GetFileInfo(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	category := vars["category"]
-	filename := vars["filename"]
+        ctx := r.Context()
+        vars := mux.Vars(r)
+        category := vars["category"]
+        filename := vars["filename"]
 
-	if !h.isValidCategory(category) {
-		h.respondError(w, errors.BadRequest("Invalid file category"))
-		return
-	}
+        if !h.isValidCategory(category) {
+                h.respondError(w, errors.BadRequest("Invalid file category"))
+                return
+        }
 
-	if err := h.validateFileName(filename); err != nil {
-		h.respondError(w, errors.BadRequest("Invalid file name"))
-		return
-	}
+        if err := h.validateFileName(filename); err != nil {
+                h.respondError(w, errors.BadRequest("Invalid file name"))
+                return
+        }
 
-	filePath := filepath.Join(category, filename)
+        filePath := filepath.Join(category, filename)
 
-	exists, err := h.fileStorage.Exists(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to check file"))
-		return
-	}
+        exists, err := h.fileStorage.Exists(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to check file existence", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to check file"))
+                return
+        }
 
-	if !exists {
-		h.respondError(w, errors.NotFound("file_not_found", "File not found"))
-		return
-	}
+        if !exists {
+                h.respondError(w, errors.NotFound("file_not_found", "File not found"))
+                return
+        }
 
-	info, err := h.fileStorage.GetInfo(ctx, filePath)
-	if err != nil {
-		h.logger.Error("Failed to get file stats", logger.String("path", filePath), logger.Error(err))
-		h.respondError(w, errors.Internal("Failed to get file info"))
-		return
-	}
+        info, err := h.fileStorage.GetInfo(ctx, filePath)
+        if err != nil {
+                h.logger.Error("Failed to get file stats", logger.String("path", filePath), logger.Error(err))
+                h.respondError(w, errors.Internal("Failed to get file info"))
+                return
+        }
 
-	fileInfo := FileInfo{
-		Name:      filename,
-		Path:      filepath.Join(category, filename),
-		Size:      info.Size,
-		Type:      filepath.Ext(filename),
-		MimeType:  info.MimeType,
-		IsDir:     info.IsDir,
-		CreatedAt: info.ModTime,
-		UpdatedAt: info.ModTime,
-	}
+        fileInfo := FileInfo{
+                Name:      filename,
+                Path:      filepath.Join(category, filename),
+                Size:      info.Size,
+                Type:      filepath.Ext(filename),
+                MimeType:  info.MimeType,
+                IsDir:     info.IsDir,
+                CreatedAt: info.ModTime,
+                UpdatedAt: info.ModTime,
+        }
 
-	h.respondJSON(w, http.StatusOK, fileInfo)
+        h.respondJSON(w, http.StatusOK, fileInfo)
 }
 
 func (h *FileHandler) extractZIP(ctx context.Context, zipPath, destPath string) ([]string, error) {
-	reader, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
+        reader, err := zip.OpenReader(zipPath)
+        if err != nil {
+                return nil, err
+        }
+        defer reader.Close()
 
-	var extractedFiles []string
+        var extractedFiles []string
 
-	for _, file := range reader.File {
-		if err := h.validateZIPEntry(file.Name); err != nil {
-			return nil, err
-		}
+        for _, file := range reader.File {
+                if err := h.validateZIPEntry(file.Name); err != nil {
+                        return nil, err
+                }
 
-		relPath := file.Name
-		filePath := filepath.Join(destPath, relPath)
+                relPath := file.Name
+                filePath := filepath.Join(destPath, relPath)
 
-		if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(destPath)) {
-			return nil, fmt.Errorf("invalid file path: %s", file.Name)
-		}
+                if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(destPath)) {
+                        return nil, fmt.Errorf("invalid file path: %s", file.Name)
+                }
 
-		if file.FileInfo().IsDir() {
-			h.fileStorage.CreateDir(ctx, filePath)
-			continue
-		}
+                if file.FileInfo().IsDir() {
+                        h.fileStorage.CreateDir(ctx, filePath)
+                        continue
+                }
 
-		rc, err := file.Open()
-		if err != nil {
-			return nil, err
-		}
+                rc, err := file.Open()
+                if err != nil {
+                        return nil, err
+                }
 
-		if err := h.fileStorage.WriteReader(ctx, filePath, rc); err != nil {
-			rc.Close()
-			return nil, err
-		}
-		rc.Close()
+                if err := h.fileStorage.WriteReader(ctx, filePath, rc); err != nil {
+                        rc.Close()
+                        return nil, err
+                }
+                rc.Close()
 
-		extractedFiles = append(extractedFiles, file.Name)
-	}
+                extractedFiles = append(extractedFiles, file.Name)
+        }
 
-	return extractedFiles, nil
+        return extractedFiles, nil
 }
 
 func (h *FileHandler) validateFileName(filename string) error {
-	if strings.Contains(filename, "..") {
-		return fmt.Errorf("path traversal detected")
-	}
+        if strings.Contains(filename, "..") {
+                return fmt.Errorf("path traversal detected")
+        }
 
-	if strings.ContainsAny(filename, `<>:"|?*\\`) {
-		return fmt.Errorf("invalid characters in filename")
-	}
+        if strings.ContainsAny(filename, `<>:"|?*\\`) {
+                return fmt.Errorf("invalid characters in filename")
+        }
 
-	if len(filename) > 255 {
-		return fmt.Errorf("filename too long")
-	}
+        if len(filename) > 255 {
+                return fmt.Errorf("filename too long")
+        }
 
-	return nil
+        return nil
 }
 
 func (h *FileHandler) validateZIPEntry(entryName string) error {
-	if strings.Contains(entryName, "..") {
-		return fmt.Errorf("path traversal detected in ZIP entry: %s", entryName)
-	}
+        if strings.Contains(entryName, "..") {
+                return fmt.Errorf("path traversal detected in ZIP entry: %s", entryName)
+        }
 
-	if strings.HasPrefix(entryName, "/") {
-		return fmt.Errorf("absolute path in ZIP entry: %s", entryName)
-	}
+        if strings.HasPrefix(entryName, "/") {
+                return fmt.Errorf("absolute path in ZIP entry: %s", entryName)
+        }
 
-	return nil
+        return nil
 }
 
 func (h *FileHandler) isValidCategory(category string) bool {
-	validCategories := []string{"templates", "attachments", "configs", "campaigns", "logs", "exports", "general"}
-	for _, valid := range validCategories {
-		if category == valid {
-			return true
-		}
-	}
-	return false
+        validCategories := []string{"templates", "attachments", "configs", "campaigns", "logs", "exports", "general"}
+        for _, valid := range validCategories {
+                if category == valid {
+                        return true
+                }
+        }
+        return false
 }
 
 func (h *FileHandler) isAllowedFileType(ext string) bool {
-	if len(h.allowedTypes) == 0 {
-		return true
-	}
+        if len(h.allowedTypes) == 0 {
+                return true
+        }
 
-	ext = strings.ToLower(ext)
-	for _, allowed := range h.allowedTypes {
-		if ext == strings.ToLower(allowed) {
-			return true
-		}
-	}
-	return false
+        ext = strings.ToLower(ext)
+        for _, allowed := range h.allowedTypes {
+                if ext == strings.ToLower(allowed) {
+                        return true
+                }
+        }
+        return false
 }
 
 func (h *FileHandler) getContentType(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	contentTypes := map[string]string{
-		".html": "text/html",
-		".css":  "text/css",
-		".js":   "application/javascript",
-		".json": "application/json",
-		".xml":  "application/xml",
-		".txt":  "text/plain",
-		".csv":  "text/csv",
-		".pdf":  "application/pdf",
-		".zip":  "application/zip",
-		".jpg":  "image/jpeg",
-		".jpeg": "image/jpeg",
-		".png":  "image/png",
-		".gif":  "image/gif",
-		".svg":  "image/svg+xml",
-		".webp": "image/webp",
-	}
+        ext := strings.ToLower(filepath.Ext(filename))
+        contentTypes := map[string]string{
+                ".html": "text/html",
+                ".css":  "text/css",
+                ".js":   "application/javascript",
+                ".json": "application/json",
+                ".xml":  "application/xml",
+                ".txt":  "text/plain",
+                ".csv":  "text/csv",
+                ".pdf":  "application/pdf",
+                ".zip":  "application/zip",
+                ".jpg":  "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png":  "image/png",
+                ".gif":  "image/gif",
+                ".svg":  "image/svg+xml",
+                ".webp": "image/webp",
+        }
 
-	if contentType, ok := contentTypes[ext]; ok {
-		return contentType
-	}
+        if contentType, ok := contentTypes[ext]; ok {
+                return contentType
+        }
 
-	return "application/octet-stream"
+        return "application/octet-stream"
 }
 
 func (h *FileHandler) respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(status)
+        json.NewEncoder(w).Encode(data)
 }
 
 func (h *FileHandler) respondError(w http.ResponseWriter, err error) {
-	var status int
-	var message string
+        var status int
+        var message string
 
-	if appErr, ok := err.(*errors.Error); ok {
-		status = appErr.StatusCode
-		message = appErr.Message
-	} else {
-		status = http.StatusInternalServerError
-		message = "Internal server error"
-	}
+        if appErr, ok := err.(*errors.Error); ok {
+                status = appErr.StatusCode
+                message = appErr.Message
+        } else {
+                status = http.StatusInternalServerError
+                message = "Internal server error"
+        }
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":   message,
-		"status":  status,
-		"success": false,
-	})
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(status)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+                "error":   message,
+                "status":  status,
+                "success": false,
+        })
 }
 // ExtractZip extracts a ZIP file
 func (h *FileHandler) ExtractZip(w http.ResponseWriter, r *http.Request) {

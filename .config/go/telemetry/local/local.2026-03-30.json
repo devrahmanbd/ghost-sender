@@ -1,0 +1,168 @@
+{
+ "Week": "2026-03-30",
+ "LastWeek": "",
+ "X": 0.12835187634959566,
+ "Programs": [
+  {
+   "Program": "cmd/asm",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "asm/flag:D": 93,
+    "asm/flag:I": 93,
+    "asm/flag:gensymabis": 36,
+    "asm/flag:o": 93,
+    "asm/flag:p": 93,
+    "asm/flag:trimpath": 93,
+    "asm/invocations": 93
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/cgo",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "cgo/flag:dynimport": 8,
+    "cgo/flag:dynlinker": 2,
+    "cgo/flag:dynout": 8,
+    "cgo/flag:dynpackage": 8,
+    "cgo/flag:import_runtime_cgo": 2,
+    "cgo/flag:import_syscall": 2,
+    "cgo/flag:importpath": 9,
+    "cgo/flag:ldflags": 9,
+    "cgo/flag:objdir": 9,
+    "cgo/invocations": 17
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/compile",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "compile/flag:asmhdr": 36,
+    "compile/flag:buildid": 695,
+    "compile/flag:c": 695,
+    "compile/flag:complete": 649,
+    "compile/flag:dwarf": 1,
+    "compile/flag:e": 26,
+    "compile/flag:embedcfg": 2,
+    "compile/flag:goversion": 695,
+    "compile/flag:importcfg": 695,
+    "compile/flag:lang": 695,
+    "compile/flag:nolocalimports": 695,
+    "compile/flag:o": 695,
+    "compile/flag:p": 695,
+    "compile/flag:pack": 695,
+    "compile/flag:std": 231,
+    "compile/flag:symabis": 36,
+    "compile/flag:trimpath": 695,
+    "compile/invocations": 858
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/go",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "go/build/flag:gcflags": 1,
+    "go/build/flag:o": 99,
+    "go/build/flag:v": 3,
+    "go/buildcache/hit": 54402,
+    "go/buildcache/miss": 2604,
+    "go/buildcache/stdlib-recompiled": 9,
+    "go/env/flag:json": 53,
+    "go/flag:C": 1,
+    "go/goroot:other": 582,
+    "go/invocations": 582,
+    "go/list/flag:compiled": 60,
+    "go/list/flag:deps": 60,
+    "go/list/flag:e": 167,
+    "go/list/flag:export": 60,
+    "go/list/flag:f": 177,
+    "go/list/flag:find": 60,
+    "go/list/flag:json": 84,
+    "go/list/flag:m": 50,
+    "go/list/flag:mod": 24,
+    "go/list/flag:overlay": 16,
+    "go/list/flag:pgo": 60,
+    "go/list/flag:test": 60,
+    "go/mod-tidy/flag:modfile": 98,
+    "go/mode:gopath": 127,
+    "go/mode:module": 455,
+    "go/platform/host/linux/major-version:6": 582,
+    "go/platform/host/linux/version:6-14": 582,
+    "go/platform/target/goamd64:v1": 582,
+    "go/platform/target/goarch:amd64": 582,
+    "go/platform/target/goos:linux": 582,
+    "go/subcommand:build": 110,
+    "go/subcommand:doc": 1,
+    "go/subcommand:env": 80,
+    "go/subcommand:get": 1,
+    "go/subcommand:list": 261,
+    "go/subcommand:mod-tidy": 98,
+    "go/subcommand:run": 6,
+    "go/subcommand:test": 3,
+    "go/subcommand:version": 15,
+    "go/subcommand:vet": 7
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "golang.org/x/tools/gopls",
+   "Version": "devel",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "gopls/client:other": 15,
+    "gopls/completion/used:unknown": 116,
+    "gopls/gotoolchain:auto": 15,
+    "gopls/goversion:1.25": 15,
+    "gopls/telemetryprompt/attempts:0": 15
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/link",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "link/flag:X": 2,
+    "link/flag:buildid": 59,
+    "link/flag:buildmode": 59,
+    "link/flag:extld": 59,
+    "link/flag:importcfg": 59,
+    "link/flag:o": 59,
+    "link/flag:s": 2,
+    "link/flag:w": 2,
+    "link/invocations": 178
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/vet",
+   "Version": "go1.25.5",
+   "GoVersion": "go1.25.5",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "vet/invocations": 936
+   },
+   "Stacks": {}
+  }
+ ],
+ "Config": "v0.0.0-0"
+}

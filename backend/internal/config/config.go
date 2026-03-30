@@ -3,6 +3,7 @@ import (
 "fmt"
 "os"
 "path/filepath"
+"strconv"
 "strings"
 "sync"
 "time"
@@ -266,6 +267,9 @@ JWTSecret           string        `yaml:"jwt_secret" env:"JWT_SECRET"`
 JWTExpiration       time.Duration `yaml:"jwt_expiration" env:"JWT_EXPIRATION"`
 APIKey              string        `yaml:"api_key" env:"API_KEY"`
 EnableAPIKey        bool          `yaml:"enable_api_key" env:"SECURITY_ENABLE_API_KEY"`
+AdminUsername       string        `yaml:"admin_username" env:"ADMIN_USERNAME"`
+AdminPassword       string        `yaml:"admin_password" env:"ADMIN_PASSWORD"`
+MaxConcurrentCampaigns int       `yaml:"max_concurrent_campaigns" env:"MAX_CONCURRENT_CAMPAIGNS"`
 EncryptionKey       string        `yaml:"encryption_key" env:"ENCRYPTION_KEY"`
 EnableEncryption    bool          `yaml:"enable_encryption" env:"SECURITY_ENABLE_ENCRYPTION"`
 EncryptionAlgorithm string        `yaml:"encryption_algorithm" env:"SECURITY_ENCRYPTION_ALGORITHM"`
@@ -442,7 +446,7 @@ AttachmentPath:    "./storage/attachments",
 LogPath:           "./storage/logs",
 BackupPath:        "./storage/backups",
 MaxUploadSizeMB:   100,
-AllowedExtensions: []string{".zip", ".html", ".pdf", ".jpg", ".png"},
+AllowedExtensions: []string{".zip", ".html", ".pdf", ".jpg", ".png", ".json"},
 }
 c.Email = EmailConfig{
 DefaultCharset:     "UTF-8",
@@ -467,7 +471,7 @@ SuspendThreshold:    10,
 ConsecutiveFailures: 5,
 }
 c.Campaign = CampaignConfig{
-MaxConcurrent:          10,
+MaxConcurrent:          2,
 DefaultPriority:        "normal",
 EnableScheduling:       true,
 EnableCheckpointing:    true,
@@ -582,6 +586,9 @@ c.Security = SecurityConfig{
 EnableAuth:          true,
 JWTExpiration:       24 * time.Hour,
 EnableAPIKey:        true,
+AdminUsername:       "admin",
+AdminPassword:       "admin",
+MaxConcurrentCampaigns: 5,
 EnableEncryption:    true,
 EncryptionAlgorithm: "AES-256-GCM",
 HashAlgorithm:       "SHA256",
@@ -616,22 +623,22 @@ c.loadedAt = time.Now()
 return nil
 }
 func (c *AppConfig) LoadFromFile(path string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+        c.mu.Lock()
+        defer c.mu.Unlock()
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
+        data, err := os.ReadFile(path)
+        if err != nil {
+                return fmt.Errorf("failed to read config file: %w", err)
+        }
 
-	if err := yaml.Unmarshal(data, c); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
-	}
+        if err := yaml.Unmarshal(data, c); err != nil {
+                return fmt.Errorf("failed to parse config file: %w", err)
+        }
 
-	c.configPath = path
-	c.loadedAt = time.Now()
+        c.configPath = path
+        c.loadedAt = time.Now()
 
-	return nil
+        return nil
 }
 
 
@@ -689,6 +696,17 @@ c.Security.APIKey = v
 if v := os.Getenv("ENCRYPTION_KEY"); v != "" {
 c.Security.EncryptionKey = v
 }
+if v := os.Getenv("ADMIN_USERNAME"); v != "" {
+c.Security.AdminUsername = v
+}
+if v := os.Getenv("ADMIN_PASSWORD"); v != "" {
+c.Security.AdminPassword = v
+}
+if v := os.Getenv("MAX_CONCURRENT_CAMPAIGNS"); v != "" {
+if n, err := strconv.Atoi(v); err == nil {
+c.Security.MaxConcurrentCampaigns = n
+}
+}
 if v := os.Getenv("TELEGRAM_BOT_TOKEN"); v != "" {
 c.Notification.TelegramBotToken = v
 }
@@ -710,7 +728,7 @@ if c.Worker.MinWorkers > c.Worker.MaxWorkers {
 return fmt.Errorf("min workers (%d) cannot be greater than max workers (%d)", c.Worker.MinWorkers, c.Worker.MaxWorkers)
 }
 if c.Security.EnableAuth && c.Security.JWTSecret == "" {
-return fmt.Errorf("JWT secret is required when auth is enabled")
+return fmt.Errorf("JWT_SECRET environment variable is required when auth is enabled")
 }
 return nil
 }
@@ -841,37 +859,33 @@ return duration
 return defaultValue
 }
 func Load(path string) (*AppConfig, error) {
-	cfg := New()
-	if err := cfg.LoadDefaults(); err != nil {
-		return nil, fmt.Errorf("failed to load defaults: %w", err)
-	}
-	
-	if path != "" && fileExists(path) {
-		if err := cfg.LoadFromFile(path); err != nil {
-			return nil, fmt.Errorf("failed to load config file %s: %w", path, err)
-		}
-		// DEBUG: Check what was loaded
-		fmt.Printf("DEBUG after LoadFromFile: Database.Database = '%s'\n", cfg.Database.Database)
-		fmt.Printf("DEBUG after LoadFromFile: Database.Username = '%s'\n", cfg.Database.Username)
-		fmt.Printf("DEBUG after LoadFromFile: Database.Host = '%s'\n", cfg.Database.Host)
-	}
-	
-	if err := cfg.LoadFromEnv(); err != nil {
-		return nil, fmt.Errorf("failed to load environment variables: %w", err)
-	}
-	
-	// DEBUG: Check after env
-	fmt.Printf("DEBUG after LoadFromEnv: Database.Database = '%s'\n", cfg.Database.Database)
-	
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w", err)
-	}
-	
-	if err := cfg.EnsureDirectories(); err != nil {
-		return nil, fmt.Errorf("failed to create directories: %w", err)
-	}
-	
-	return cfg, nil
+        cfg := New()
+        if err := cfg.LoadDefaults(); err != nil {
+                return nil, fmt.Errorf("failed to load defaults: %w", err)
+        }
+        
+        if path != "" && fileExists(path) {
+                if err := cfg.LoadFromFile(path); err != nil {
+                        return nil, fmt.Errorf("failed to load config file %s: %w", path, err)
+                }
+        }
+        
+        if err := cfg.LoadFromEnv(); err != nil {
+                return nil, fmt.Errorf("failed to load environment variables: %w", err)
+        }
+        
+        
+        if err := cfg.Validate(); err != nil {
+                return nil, fmt.Errorf("config validation failed: %w", err)
+        }
+        
+        if err := cfg.EnsureDirectories(); err != nil {
+                return nil, fmt.Errorf("failed to create directories: %w", err)
+        }
+
+        Set(cfg)
+        
+        return cfg, nil
 }
 
 func fileExists(path string) bool {

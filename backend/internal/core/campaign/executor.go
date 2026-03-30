@@ -15,6 +15,8 @@ import (
     "email-campaign-system/internal/models"
     "email-campaign-system/internal/storage/repository"
     "email-campaign-system/pkg/logger"
+
+    "github.com/google/uuid"
 )
 
 var (
@@ -153,16 +155,77 @@ func (ei *ExecutorInstance) run(ctx context.Context, executor *Executor) {
         if r := recover(); r != nil {
             executor.log.Error("executor panic recovered",
                 logger.Any("error", r),
-                logger.String("campaign_id", ei.campaign.ID),
+                logger.String("campaignid", ei.campaign.ID),
             )
         }
     }()
 
     ei.stats.StartTime = time.Now()
 
+    // Register engine delivery callbacks.
+    // Stats only update on real SMTP confirmation, not on queue entry.
+    ei.senderInstance.OnEvent(func(event *sender.SendEvent) {
+        if event.Job.CampaignID != ei.campaign.ID {
+            return
+        }
+        switch event.Type {
+        case sender.EventTypeSent:
+            ei.state.mu.Lock()
+            ei.state.SuccessCount++
+            ei.state.mu.Unlock()
+            ei.stats.IncrementSent()
+            ei.stats.DecrementInProgress()
+            ei.stats.LastEmailTime = time.Now()
+            logEntry := &repository.LogEntry{
+                ID:          uuid.New().String(),
+                CampaignID:  ei.campaign.ID,
+                RecipientID: event.Job.Recipient.ID,
+                AccountID:   event.Job.Account.ID,
+                Level:       repository.LogLevelInfo,
+                Category:    repository.LogCategoryCampaign,
+                Message:     "Email sent successfully",
+                Time:        time.Now(),
+                CreatedAt:   time.Now(),
+            }
+            if insertErr := executor.logRepo.Insert(context.Background(), logEntry); insertErr != nil {
+                executor.log.Error("failed to insert sent log entry",
+                    logger.String("campaign_id", ei.campaign.ID),
+                    logger.String("error", insertErr.Error()),
+                )
+            }
+
+        case sender.EventTypeFailed:
+            // Only count final failure, not intermediate retries
+            if event.Job.Retries >= event.Job.MaxRetries {
+                ei.state.mu.Lock()
+                ei.state.FailedCount++
+                ei.state.mu.Unlock()
+                ei.stats.IncrementFailed()
+                ei.stats.DecrementInProgress()
+                logEntry := &repository.LogEntry{
+                    ID:          uuid.New().String(),
+                    CampaignID:  ei.campaign.ID,
+                    RecipientID: event.Job.Recipient.ID,
+                    AccountID:   event.Job.Account.ID,
+                    Level:       repository.LogLevelError,
+                    Category:    repository.LogCategoryCampaign,
+                    Message:     "Email send failed permanently",
+                    ErrorClass:  event.Result.Error.Error(),
+                    Time:        time.Now(),
+                    CreatedAt:   time.Now(),
+                }
+                if insertErr := executor.logRepo.Insert(context.Background(), logEntry); insertErr != nil {
+                    executor.log.Error("failed to insert failed log entry",
+                        logger.String("campaign_id", ei.campaign.ID),
+                        logger.String("error", insertErr.Error()),
+                    )
+                }
+            }
+        }
+    })
+
     statsTicker := time.NewTicker(executor.config.StatsUpdateInterval)
     defer statsTicker.Stop()
-
     checkpointTicker := time.NewTicker(executor.config.CheckpointInterval)
     defer checkpointTicker.Stop()
 
@@ -189,28 +252,57 @@ func (ei *ExecutorInstance) run(ctx context.Context, executor *Executor) {
             if ei.stopped.Load() {
                 return
             }
-
             if ei.paused.Load() {
                 time.Sleep(100 * time.Millisecond)
                 continue
             }
-
             start := batchIndex * executor.config.BatchSize
             end := start + executor.config.BatchSize
             if end > len(ei.recipients) {
                 end = len(ei.recipients)
             }
-
             batch := ei.recipients[start:end]
             ei.processBatch(ctx, batch, executor)
-
             batchIndex++
         }
     }
 
     ei.processRetryQueue(ctx, executor)
+
+    waitTimeout := 5 * time.Minute
+    waitDeadline := time.After(waitTimeout)
+    pollInterval := 500 * time.Millisecond
+    for {
+        ei.stats.mu.RLock()
+        inProgress := ei.stats.InProgress
+        ei.stats.mu.RUnlock()
+        if inProgress <= 0 {
+            break
+        }
+        select {
+        case <-ctx.Done():
+            executor.log.Warn("context cancelled while waiting for in-progress sends",
+                logger.String("campaign_id", ei.campaign.ID),
+                logger.Int64("in_progress", inProgress),
+            )
+            ei.handleStop(executor)
+            return
+        case <-ei.stopChan:
+            ei.handleStop(executor)
+            return
+        case <-waitDeadline:
+            executor.log.Warn("timed out waiting for in-progress sends to complete",
+                logger.String("campaign_id", ei.campaign.ID),
+                logger.Int64("in_progress", inProgress),
+            )
+            goto complete
+        case <-time.After(pollInterval):
+        }
+    }
+complete:
     ei.handleCompletion(executor)
 }
+
 
 func (ei *ExecutorInstance) processBatch(ctx context.Context, batch []*models.Recipient, executor *Executor) {
     var wg sync.WaitGroup
@@ -236,43 +328,52 @@ func (ei *ExecutorInstance) processBatch(ctx context.Context, batch []*models.Re
 }
 
 func (ei *ExecutorInstance) processRecipient(ctx context.Context, recipient *models.Recipient, executor *Executor) {
-    job := &EmailJob{
-        ID:          fmt.Sprintf("%s-%s", ei.campaign.ID, recipient.ID),
-        CampaignID:  ei.campaign.ID,
-        Recipient:   recipient,
-        RetryCount:  0,
-        CreatedAt:   time.Now(),
+    job := EmailJob{
+        ID:         fmt.Sprintf("%s-%s", ei.campaign.ID, recipient.ID),
+        CampaignID: ei.campaign.ID,
+        Recipient:  recipient,
+        RetryCount: 0,
+        CreatedAt:  time.Now(),
     }
 
     if len(ei.accounts) == 0 {
-        ei.handleJobFailure(job, ErrNoAccounts, executor)
+        ei.handleJobFailure(&job, ErrNoAccounts, executor)
         return
     }
     job.Account = ei.accounts[0]
 
     if len(ei.templates) == 0 {
-        ei.handleJobFailure(job, errors.New("no templates available"), executor)
+        ei.handleJobFailure(&job, errors.New("no templates available"), executor)
         return
     }
     job.Template = ei.templates[0]
 
-    // ✅ FIXED: Use ei.campaign directly (not &ei.campaign)
+    campaignCustomFields := extractCampaignCustomFields(ei.campaign)
+    
+    if job.Template.CustomVariables != nil {
+        if campaignCustomFields == nil {
+            campaignCustomFields = make(map[string][]string)
+        }
+        for key, values := range job.Template.CustomVariables {
+            campaignCustomFields[key] = values
+        }
+    }
+
     personalizedResult, err := executor.personalizationEngine.Personalize(
-        job.Template.HTMLContent,
-        ei.campaign.Name,
-        job.Account.Name,
+        job.Template.HTMLContent, ei.campaign.Name, job.Account.Name,
         &personalization.PersonalizationContext{
-            Recipient:      recipient,
-            Campaign:       ei.campaign,  // ✅ Fixed: ei.campaign is already *models.Campaign
-            Account:        job.Account,
-            CustomFields:   make(map[string]string),
-            Timestamp:      time.Now(),
-            Timezone:       "UTC",
-            AdditionalData: make(map[string]interface{}),
+            Recipient:            recipient,
+            Campaign:             ei.campaign,
+            Account:              job.Account,
+            CustomFields:         recipient.CustomFields,
+            CampaignCustomFields: campaignCustomFields,
+            Timestamp:            time.Now(),
+            Timezone:             "UTC",
+            AdditionalData:       make(map[string]interface{}),
         },
     )
     if err != nil {
-        ei.handleJobFailure(job, fmt.Errorf("personalization failed: %w", err), executor)
+        ei.handleJobFailure(&job, fmt.Errorf("personalization failed: %w", err), executor)
         return
     }
 
@@ -282,34 +383,52 @@ func (ei *ExecutorInstance) processRecipient(ctx context.Context, recipient *mod
     }
 
     startTime := time.Now()
+
+    // InProgress tracks jobs submitted to the engine queue but not yet confirmed by SMTP.
+    // It is decremented by the OnEvent callback in run() on EventTypeSent or EventTypeFailed.
     ei.stats.IncrementInProgress()
 
     err = ei.senderInstance.QueueEmail(ctx, recipient, sender.PriorityNormal)
-
-
-    sendDuration := time.Since(startTime)
-    ei.stats.UpdateAverageSendTime(sendDuration)
-    ei.stats.DecrementInProgress()
-
     if err != nil {
+        // Failed to even enqueue — revert InProgress immediately
+        ei.stats.DecrementInProgress()
         job.Error = err
         job.LastAttempt = time.Now()
-
         if job.RetryCount < executor.config.MaxRetries {
-            ei.addToRetryQueue(job)
-            executor.log.Warn("email send failed, queued for retry",
-                logger.String("campaign_id", ei.campaign.ID),
+            ei.addToRetryQueue(&job)
+            executor.log.Warn("email queuing failed, added to retry",
+                logger.String("campaignid", ei.campaign.ID),
                 logger.String("recipient", recipient.Email),
-                logger.Int("retry_count", job.RetryCount),
+                logger.Int("retrycount", job.RetryCount),
                 logger.String("error", err.Error()),
             )
         } else {
-            ei.handleJobFailure(job, err, executor)
+            ei.handleJobFailure(&job, err, executor)
         }
         return
     }
 
-    ei.handleJobSuccess(job, executor)
+    // Successfully handed to the send engine queue.
+    // Do NOT call IncrementSent here — that only happens in the OnEvent callback
+    // after the SMTP server returns 250 OK.
+    ei.stats.DecrementPending()
+    ei.stats.UpdateAverageSendTime(time.Since(startTime))
+
+    executor.log.Info("email queued for delivery",
+        logger.String("campaignid", ei.campaign.ID),
+        logger.String("recipient", recipient.Email),
+    )
+}
+
+ 
+func (ei *ExecutorInstance) handleJobQueued(job *EmailJob, executor *Executor) {
+    ei.stats.DecrementPending()
+    ei.stats.LastEmailTime = time.Now()
+
+    executor.log.Info("email queued for delivery",
+        logger.String("campaign_id", ei.campaign.ID),
+        logger.String("recipient", job.Recipient.Email),
+    )
 }
 
 func (ei *ExecutorInstance) processRetryQueue(ctx context.Context, executor *Executor) {
@@ -343,9 +462,9 @@ func (ei *ExecutorInstance) handleJobSuccess(job *EmailJob, executor *Executor) 
     ei.stats.DecrementPending()
     ei.stats.LastEmailTime = time.Now()
 
-    // ✅ FIXED: Use Insert instead of Save
+
     logEntry := &repository.LogEntry{
-        ID:          fmt.Sprintf("log-%d", time.Now().UnixNano()),
+        ID:          uuid.New().String(),
         CampaignID:  ei.campaign.ID,
         RecipientID: job.Recipient.ID,
         AccountID:   job.Account.ID,
@@ -355,7 +474,12 @@ func (ei *ExecutorInstance) handleJobSuccess(job *EmailJob, executor *Executor) 
         Time:        time.Now(),
         CreatedAt:   time.Now(),
     }
-    _ = executor.logRepo.Insert(context.Background(), logEntry)
+    if insertErr := executor.logRepo.Insert(context.Background(), logEntry); insertErr != nil {
+        executor.log.Error("failed to insert success log entry",
+            logger.String("campaign_id", ei.campaign.ID),
+            logger.String("error", insertErr.Error()),
+        )
+    }
 }
 
 func (ei *ExecutorInstance) handleJobFailure(job *EmailJob, err error, executor *Executor) {
@@ -373,20 +497,25 @@ func (ei *ExecutorInstance) handleJobFailure(job *EmailJob, err error, executor 
         logger.String("recipient", job.Recipient.Email),
         logger.String("error", err.Error()),
     )
-	logEntry := &repository.LogEntry{
-		ID:          fmt.Sprintf("log-%d", time.Now().UnixNano()),
-		CampaignID:  ei.campaign.ID,
-		RecipientID:  job.Recipient.ID,
-		AccountID:    job.Account.ID,
-		Level:        repository.LogLevelError,
-		Category:     repository.LogCategoryCampaign,
-		Message:      "Email send failed",
-		ErrorClass:   err.Error(),  // Use ErrorClass instead of ErrorMessage
-		Time:         time.Now(),
-		CreatedAt:    time.Now(),
-	}
+        logEntry := &repository.LogEntry{
+                ID:          uuid.New().String(),
+                CampaignID:  ei.campaign.ID,
+                RecipientID:  job.Recipient.ID,
+                AccountID:    job.Account.ID,
+                Level:        repository.LogLevelError,
+                Category:     repository.LogCategoryCampaign,
+                Message:      "Email send failed",
+                ErrorClass:   err.Error(),  // Use ErrorClass instead of ErrorMessage
+                Time:         time.Now(),
+                CreatedAt:    time.Now(),
+        }
 
-    _ = executor.logRepo.Insert(context.Background(), logEntry)
+    if insertErr := executor.logRepo.Insert(context.Background(), logEntry); insertErr != nil {
+        executor.log.Error("failed to insert failure log entry",
+            logger.String("campaign_id", ei.campaign.ID),
+            logger.String("error", insertErr.Error()),
+        )
+    }
 }
 
 func (ei *ExecutorInstance) addToRetryQueue(job *EmailJob) {
@@ -502,36 +631,33 @@ func (ei *ExecutorInstance) GetStats() *ExecutionStats {
     }
 }
 func (e *Executor) loadRecipients(ctx context.Context, campaign *models.Campaign) ([]*models.Recipient, error) {
-	fmt.Printf("🟢 DEBUG loadRecipients: campaignID=%s\n", campaign.ID)
+        listID := campaign.RecipientGroupID
+        if listID == "" {
+                return nil, fmt.Errorf("campaign has no recipient list assigned")
+        }
+        filter := &repository.RecipientFilter{
+                ListIDs: []string{listID},
+                Limit:   10000,
+        }
 
-	filter := &repository.RecipientFilter{
-		ListIDs: []string{campaign.ID}, // scope to THIS campaign
-		Limit:   10000,
-		// No Status filter — accept any status
-	}
+        repoRecipients, _, err := e.recipientRepo.List(ctx, filter)
+        if err != nil {
+                return nil, fmt.Errorf("failed to load recipients: %w", err)
+        }
 
-	repoRecipients, total, err := e.recipientRepo.List(ctx, filter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load recipients: %w", err)
-	}
-
-	fmt.Printf("🟢 DEBUG loadRecipients: found=%d total=%d\n", len(repoRecipients), total)
-
-	recipients := make([]*models.Recipient, len(repoRecipients))
-	for i, repoRec := range repoRecipients {
-		recipients[i] = &models.Recipient{
-			ID:     repoRec.ID,
-			Email:  repoRec.Email,
-			Status: models.RecipientStatus(repoRec.Status),
-		}
-	}
-	return recipients, nil
+        recipients := make([]*models.Recipient, len(repoRecipients))
+        for i, repoRec := range repoRecipients {
+                recipients[i] = &models.Recipient{
+                        ID:     repoRec.ID,
+                        Email:  repoRec.Email,
+                        Status: models.RecipientStatus(repoRec.Status),
+                }
+        }
+        return recipients, nil
 }
 
 func (e *Executor) loadAccounts(ctx context.Context, campaign *models.Campaign) ([]*models.Account, error) {
-    fmt.Printf("🟢 DEBUG loadAccounts: campaignID=%s accountIDs=%v\n", campaign.ID, campaign.AccountIDs)
-
-    opts := &account.ListOptions{  // ✅ pointer, not value
+    opts := &account.ListOptions{
         Page:      1,
         PageSize:  100,
         SortBy:    "created_at",
@@ -540,11 +666,8 @@ func (e *Executor) loadAccounts(ctx context.Context, campaign *models.Campaign) 
 
     accounts, _, err := e.accountManager.List(ctx, opts)
     if err != nil {
-        fmt.Printf("🔴 DEBUG loadAccounts: List FAILED: %v\n", err)
         return nil, fmt.Errorf("failed to load accounts: %w", err)
     }
-
-    fmt.Printf("🟢 DEBUG loadAccounts: found=%d\n", len(accounts))
 
     if len(campaign.AccountIDs) > 0 {
         accountIDSet := make(map[string]struct{}, len(campaign.AccountIDs))
@@ -558,7 +681,6 @@ func (e *Executor) loadAccounts(ctx context.Context, campaign *models.Campaign) 
                 filtered = append(filtered, acc)
             }
         }
-        fmt.Printf("🟢 DEBUG loadAccounts: filtered to campaign accounts=%d\n", len(filtered))
         return filtered, nil
     }
 
@@ -568,8 +690,6 @@ func (e *Executor) loadAccounts(ctx context.Context, campaign *models.Campaign) 
 
 
 func (e *Executor) loadTemplates(ctx context.Context, campaign *models.Campaign) ([]*models.Template, error) {
-    fmt.Printf("🟢 DEBUG loadTemplates: templateIDs=%v\n", campaign.TemplateIDs)
-
     if len(campaign.TemplateIDs) == 0 {
         return nil, fmt.Errorf("no template IDs in campaign")
     }
@@ -578,13 +698,30 @@ func (e *Executor) loadTemplates(ctx context.Context, campaign *models.Campaign)
     for _, id := range campaign.TemplateIDs {
         tmpl, err := e.templateRepo.GetByID(ctx, id)
         if err != nil {
-            fmt.Printf("🔴 DEBUG loadTemplates: error fetching id=%s: %v\n", id, err)
             continue
+        }
+        var subjects []string
+        if tmpl.Subject != "" {
+            subjects = []string{tmpl.Subject}
+        }
+        status := models.TemplateStatusInactive
+        if tmpl.IsActive {
+            status = models.TemplateStatusActive
         }
         templates = append(templates, &models.Template{
             ID:               tmpl.ID,
-            HTMLContent:      tmpl.HtmlContent,      // repo field is HtmlContent
-            PlainTextContent: tmpl.TextContent,      // repo field is TextContent
+            Name:             tmpl.Name,
+            Description:      tmpl.Description,
+            HTMLContent:      tmpl.HtmlContent,
+            PlainTextContent: tmpl.TextContent,
+            Subjects:         subjects,
+            Tags:             tmpl.Tags,
+            Status:           status,
+            SpamScore:        tmpl.SpamScore,
+            Metadata:         tmpl.Metadata,
+            CustomVariables:  tmpl.CustomVariables,
+            CreatedAt:        tmpl.CreatedAt,
+            UpdatedAt:        tmpl.UpdatedAt,
         })
     }
 
@@ -592,7 +729,6 @@ func (e *Executor) loadTemplates(ctx context.Context, campaign *models.Campaign)
         return nil, fmt.Errorf("no templates could be loaded")
     }
 
-    fmt.Printf("🟢 DEBUG loadTemplates: loaded=%d\n", len(templates))
     return templates, nil
 }
 
@@ -617,7 +753,6 @@ func (es *ExecutionStats) IncrementSent() {
     defer es.mu.Unlock()
     es.Sent++
 }
-
 func (es *ExecutionStats) IncrementFailed() {
     es.mu.Lock()
     defer es.mu.Unlock()
@@ -662,24 +797,7 @@ func (es *ExecutionStats) UpdateAverageSendTime(duration time.Duration) {
     }
 }
 func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instance *ExecutorInstance, err error) {
-    // ✅ Catch any panic and convert to error so StartCampaign handler sees it
-    defer func() {
-        if r := recover(); r != nil {
-            err = fmt.Errorf("executor.Start panic: %v", r)
-            e.log.Error("executor.Start panic recovered",
-                logger.Any("panic", r),
-                logger.String("campaign_id", campaign.ID),
-            )
-        }
-    }()
-
     e.senderEngine.SetCampaign(campaign)
-
-    if !e.senderEngine.IsRunning() {
-        if err := e.senderEngine.Start(ctx); err != nil {
-            return nil, fmt.Errorf("failed to start sender engine: %w", err)
-        }
-    }
 
     recipients, err := e.loadRecipients(ctx, campaign)
     if err != nil {
@@ -697,9 +815,28 @@ func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instan
         return nil, ErrNoAccounts
     }
 
+    accountValues := make([]models.Account, 0, len(accounts))
+    for _, a := range accounts {
+        if a != nil {
+            accountValues = append(accountValues, *a)
+        }
+    }
+    if len(accountValues) == 0 {
+        return nil, ErrNoAccounts
+    }
+    e.senderEngine.SetAccounts(accountValues)
+
     templates, err := e.loadTemplates(ctx, campaign)
     if err != nil {
         return nil, fmt.Errorf("failed to load templates: %w", err)
+    }
+
+    e.senderEngine.SetSmartSending(campaign.Config.SmartSending)
+
+    if !e.senderEngine.IsRunning() {
+        if err := e.senderEngine.Start(ctx); err != nil {
+            return nil, fmt.Errorf("failed to start sender engine: %w", err)
+        }
     }
 
     instance = &ExecutorInstance{
@@ -710,9 +847,9 @@ func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instan
         accounts:       accounts,
         stats:          NewExecutionStats(int64(len(recipients))),
         senderInstance: e.senderEngine,
-        pauseChan:      make(chan struct{}),
-        resumeChan:     make(chan struct{}),
-        stopChan:       make(chan struct{}),
+        pauseChan:      make(chan struct{}, 1),
+        resumeChan:     make(chan struct{}, 1),
+        stopChan:       make(chan struct{}, 1),
     }
 
     go instance.run(ctx, e)
@@ -727,32 +864,19 @@ func (e *Executor) Start(ctx context.Context, campaign *models.Campaign) (instan
     return instance, nil
 }
 func (e *Executor) StartFromCheckpoint(ctx context.Context, campaign *models.Campaign, processedCount int64) (instance *ExecutorInstance, err error) {
-    defer func() {
-        if r := recover(); r != nil {
-            err = fmt.Errorf("executor.StartFromCheckpoint panic: %v", r)
-            e.log.Error("executor.StartFromCheckpoint panic", logger.Any("panic", r))
-        }
-    }()
-
     e.senderEngine.SetCampaign(campaign)
-    if !e.senderEngine.IsRunning() {
-        if err := e.senderEngine.Start(ctx); err != nil {
-            return nil, fmt.Errorf("failed to start sender engine: %w", err)
-        }
-    }
+    e.senderEngine.SetSmartSending(campaign.Config.SmartSending)
 
     allRecipients, err := e.loadRecipients(ctx, campaign)
     if err != nil {
         return nil, fmt.Errorf("failed to load recipients: %w", err)
     }
 
-    // ✅ Skip already-processed recipients using checkpoint offset
     offset := int(processedCount)
     if offset >= len(allRecipients) {
         return nil, fmt.Errorf("campaign already fully processed: offset=%d total=%d", offset, len(allRecipients))
     }
     remaining := allRecipients[offset:]
-    fmt.Printf("🟢 DEBUG StartFromCheckpoint: skipping %d, processing remaining %d\n", offset, len(remaining))
 
     accounts, err := e.loadAccounts(ctx, campaign)
     if err != nil {
@@ -762,22 +886,34 @@ func (e *Executor) StartFromCheckpoint(ctx context.Context, campaign *models.Cam
         return nil, ErrNoAccounts
     }
 
+    acctVals := make([]models.Account, len(accounts))
+    for i, a := range accounts {
+        acctVals[i] = *a
+    }
+    e.senderEngine.SetAccounts(acctVals)
+
     templates, err := e.loadTemplates(ctx, campaign)
     if err != nil {
         return nil, fmt.Errorf("failed to load templates: %w", err)
     }
 
+    if !e.senderEngine.IsRunning() {
+        if err := e.senderEngine.Start(ctx); err != nil {
+            return nil, fmt.Errorf("failed to start sender engine: %w", err)
+        }
+    }
+
     instance = &ExecutorInstance{
         campaign:       campaign,
         state:          NewExecutionState(),
-        recipients:     remaining,   // ✅ only unprocessed
+        recipients:     remaining,
         templates:      templates,
         accounts:       accounts,
         stats:          NewExecutionStats(int64(len(remaining))),
         senderInstance: e.senderEngine,
-        pauseChan:      make(chan struct{}),
-        resumeChan:     make(chan struct{}),
-        stopChan:       make(chan struct{}),
+        pauseChan:      make(chan struct{}, 1),
+        resumeChan:     make(chan struct{}, 1),
+        stopChan:       make(chan struct{}, 1),
     }
 
     go instance.run(ctx, e)
@@ -789,4 +925,43 @@ func (e *Executor) StartFromCheckpoint(ctx context.Context, campaign *models.Cam
     )
 
     return instance, nil
+}
+
+func extractCampaignCustomFields(campaign *models.Campaign) map[string][]string {
+    if campaign == nil || campaign.Config.Metadata == nil {
+        return nil
+    }
+    raw, ok := campaign.Config.Metadata["custom_fields"]
+    if !ok || raw == nil {
+        return nil
+    }
+
+    result := make(map[string][]string)
+
+    switch cf := raw.(type) {
+    case map[string]interface{}:
+        for key, val := range cf {
+            switch v := val.(type) {
+            case []interface{}:
+                values := make([]string, 0, len(v))
+                for _, item := range v {
+                    if s, ok := item.(string); ok && s != "" {
+                        values = append(values, s)
+                    }
+                }
+                if len(values) > 0 {
+                    result[key] = values
+                }
+            case []string:
+                if len(v) > 0 {
+                    result[key] = v
+                }
+            }
+        }
+    }
+
+    if len(result) == 0 {
+        return nil
+    }
+    return result
 }

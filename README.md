@@ -527,70 +527,11 @@ Feature List
 
 
 
-
-
-
-
-
-curl -X POST http://localhost:8080/api/v1/campaigns \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Campaign",
-    "description": "Test campaign for recipient testing",
-    "status": "created",
-    "subject_lines": ["Test Subject"],
-    "sender_names": ["Test Sender"],
-    "worker_count": 1,
-    "rate_limit": 10,
-    "daily_limit": 100,
-    "rotation_limit": 10,
-    "account_ids": ["ca6a4424-6104-4919-8332-4ff8c490a27b"],
-    "template_ids": ["980cba04-aff7-424f-9073-e29e388ca94d"],
-    "template_dir": "./templates",
-    "recipient_file": "./recipients.csv",
-    "proxy_enabled": false,
-    "attachment_enabled": false,
-    "tracking_enabled": false,
-    "config": {}
-  }'
-
-
-  curl -X POST http://localhost:8080/api/v1/accounts -H "Content-Type: application/json" -d '{"email":"back2up11@cloudman.one","provider":"workspace","password":"sCi!@^5Bs*qvnkm7","sender_name":"Cloudman Backup","smtp_host":"cloudman.one","smtp_port":587,"use_tls":true,"use_ssl":false,"daily_limit":500,"rotation_limit":100}'
-
-
-curl -X POST http://localhost:8080/api/v1/templates \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "1welcome12_1email",
-    "description": "Welcome template",
-    "type": "html",
-    "content": "<h1>Hello {{name}}!</h1><p>Welcome to Ghost Sender!</p><p>{{unsubscribe}}</p>",
-    "subject": "Welcome {{name}} to Ghost Sender!",
-    "tags": ["welcome", "html"],
-    "is_active": true,
-    "config": {
-      "spam_check": true,
-      "track_clicks": true
-    }
-  }' | jq .
-
-
-
-
-curl -X POST http://localhost:8080/api/v1/recipients \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user2222@example.com", 
-    "first_name": "Jane",
-    "last_name": "Smith",
-    "campaign_id": "150d8959-ff3d-4c78-a0ef-205c97d40f42"
-  }'
-
-curl -X POST http://localhost:8080/api/v1/recipients \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user2522@example.com", 
-    "first_name": "Jane",
-    "last_name": "Smith",
-    "campaign_id": "150d8959-ff3d-4c78-a0ef-205c97d40f42"
-  }'
+## TODO
+1. Nil panic:
+```
+0x1400059cca0?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\nemail-campaign-system/internal/api/middleware.(*LoggingMiddleware).Handler-fm.(*LoggingMiddleware).Handler.func1({0x105243cb0, 0x140003c2870}, 0x140005e6640)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/middleware/logging.go:55 +0x128\nnet/http.HandlerFunc.ServeHTTP(0x14000047948?, {0x105243cb0?, 0x140003c2870?}, 0x1051fee80?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\nemail-campaign-system/internal/api/middleware.(*RecoveryMiddleware).Handler-fm.(*RecoveryMiddleware).Handler.func1({0x105243cb0, 0x140003c2870}, 0x140005e6640)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/middleware/recovery.go:54 +0xa8\nnet/http.HandlerFunc.ServeHTTP(0x140005e6500?, {0x105243cb0?, 0x140003c2870?}, 0x14000148b40?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\ngithub.com/gorilla/mux.(*Router).ServeHTTP(0x1400048e0c0, {0x105243cb0, 0x140003c2870}, 0x140005e63c0)\n\t/Users/rahman/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go:212 +0x18c\nemail-campaign-system/internal/api.(*Router).ServeHTTP(0x10?, {0x105243cb0?, 0x140003c2870?}, 0x140003c2870?)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/routes.go:254 +0x28\nnet/http.serverHandler.ServeHTTP({0x1052424d8?}, {0x105243cb0?, 0x140003c2870?}, 0x6?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:3340 +0xb0\nnet/http.(*conn).serve(0x14000148b40, {0x105244738, 0x14000258270})\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2109 +0x528\ncreated by net/http.(*Server).Serve in goroutine 63\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:3493 +0x384\n"}
+```
+2. Campaign Stop if all SMTP Account stops working
+3. Telegram Update
+4. SMTP Checker
