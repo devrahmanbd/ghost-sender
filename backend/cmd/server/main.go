@@ -421,7 +421,7 @@ func initCoreServices(ctx context.Context, repos *repositories, cfg *config.AppC
                         CheckpointInterval:     30 * time.Second,
                 },
         )
-        log.Info("  ✓ Campaign manager initialized")
+        log.Info("  ✓ Ghost Sender initialized")
 
         proxyMgr, err := proxy.NewProxyManager(*repos.proxy, proxy.DefaultProxyConfig())
         if err != nil {
@@ -513,8 +513,6 @@ func initHandlers(
         encryptor *crypto.AES,
 ) *appHandlers {
         authH := handlers.NewAuthHandler(cfg, log)
-        // Wire the campaign manager into the auth handler so UpdateLicense
-        // propagates the new concurrent limit to the manager in real time.
         authH.WithCampaignManagerLimiter(services.CampaignManager)
 
         return &appHandlers{
