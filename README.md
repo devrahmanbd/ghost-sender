@@ -528,6 +528,29 @@ Feature List
 
 
 ## TODO
+1. The Message-ID generation falls back to using the local machine name, which is an immediate red flag for modern spam filters (Proof: if domain == "" { domain = "localhost" } in headers.go).
+
+The system explicitly flags itself as mass marketing by defaulting to promotional headers, which guarantees routing to Spam or Promotions tabs in Gmail and Outlook (Proof: PrecedenceValue: "bulk" and SetBulkPrecedence() in headers.go).
+
+The default mailer signature broadcasts that the email was sent by a script rather than a human, heavily penalizing your sender reputation (Proof: MailerName: "Email Campaign System v1.0" in headers.go).
+
+The MIME builder encodes HTML and Text bodies using base64 by default instead of quoted-printable, which needlessly bloats the email size by 33% and triggers spam heuristics (Proof: PreferredEncoding: EncodingBase64 in mime.go).
+
+Inline images are incorrectly packaged inside a multipart/mixed container instead of the required multipart/related standard, causing strict email clients to misinterpret the email structure and flag it as suspicious (Proof: mb.inlineFiles are appended under Content-Type: multipart/mixed in mime.go).
+
+Missing Header / MIME components:
+
+The Return-Path uses the primary sender email instead of a dedicated Variable Envelope Return Path (VERP) subdomain, meaning bounce-backs will directly damage your primary domain's reputation (Proof: headers.ReturnPath = fmt.Sprintf("<%s>", hb.accountEmail) in headers.go).
+
+Why attachments can't convert properly:
+
+The backend engine is forcibly applying its own default margins instead of respecting your CSS because 0.4-inch margins are hardcoded into the default configurations for both PDF engines (Proof: MarginTop: 0.4 and --margin-top fmt.Sprintf("%.1fmm", opts.MarginTop*25.4) in both pdf.go and native_converter.go).
+
+The document is not rendering edge-to-edge because the headless Chrome engine is explicitly configured to ignore your CSS @page dimension rules (Proof: PreferCSSPageSize: false in DefaultPDFConfig() in pdf.go).
+
+The entire HTML layout is being automatically scaled down because the native converter explicitly injects a command-line flag to shrink your content to fit inside the forced boundaries (Proof: args = append(args, "--enable-smart-shrinking") in native_converter.go).
+
+Possible Fix: use have johnfercher/maroto render the PDF directly to a bytes.Buffer instead of writing it to the disk, Take that byte buffer and attach it directly to the email payload
 1. Nil panic:
 ```
 0x1400059cca0?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\nemail-campaign-system/internal/api/middleware.(*LoggingMiddleware).Handler-fm.(*LoggingMiddleware).Handler.func1({0x105243cb0, 0x140003c2870}, 0x140005e6640)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/middleware/logging.go:55 +0x128\nnet/http.HandlerFunc.ServeHTTP(0x14000047948?, {0x105243cb0?, 0x140003c2870?}, 0x1051fee80?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\nemail-campaign-system/internal/api/middleware.(*RecoveryMiddleware).Handler-fm.(*RecoveryMiddleware).Handler.func1({0x105243cb0, 0x140003c2870}, 0x140005e6640)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/middleware/recovery.go:54 +0xa8\nnet/http.HandlerFunc.ServeHTTP(0x140005e6500?, {0x105243cb0?, 0x140003c2870?}, 0x14000148b40?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2322 +0x38\ngithub.com/gorilla/mux.(*Router).ServeHTTP(0x1400048e0c0, {0x105243cb0, 0x140003c2870}, 0x140005e63c0)\n\t/Users/rahman/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go:212 +0x18c\nemail-campaign-system/internal/api.(*Router).ServeHTTP(0x10?, {0x105243cb0?, 0x140003c2870?}, 0x140003c2870?)\n\t/Users/rahman/Downloads/Ghost-Senderzip-38/backend/internal/api/routes.go:254 +0x28\nnet/http.serverHandler.ServeHTTP({0x1052424d8?}, {0x105243cb0?, 0x140003c2870?}, 0x6?)\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:3340 +0xb0\nnet/http.(*conn).serve(0x14000148b40, {0x105244738, 0x14000258270})\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:2109 +0x528\ncreated by net/http.(*Server).Serve in goroutine 63\n\t/opt/homebrew/Cellar/go/1.25.0/libexec/src/net/http/server.go:3493 +0x384\n"}

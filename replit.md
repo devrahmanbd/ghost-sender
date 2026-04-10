@@ -4,13 +4,13 @@
 Go-based email campaign management system with a web frontend. Manages email campaigns, accounts, templates, attachments, proxies, and recipient lists.
 
 ## Architecture
-- **Backend**: Go (1.25), located at `Ghost-Senderzip/Ghost-Senderzip/backend/`
+- **Backend**: Go (1.25), located at `./backend/`
 - **Frontend**: Server-rendered HTML templates with Tailwind CSS (served by Go backend)
 - **Database**: PostgreSQL 16 (Replit-managed, accessed via `DATABASE_URL`)
 - **Cache**: Redis (optional, falls back to in-memory)
 
 ## Key Configuration
-- **Config file**: `Ghost-Senderzip/Ghost-Senderzip/backend/configs/config.yaml`
+- **Config file**: `./backend/configs/config.yaml`
 - **Server port**: 5000 (set via `SERVER_PORT` env var, overriding default 8080)
 - **Admin credentials**: admin / admin123
 - **JWT_SECRET**: Set in shared env vars
@@ -18,7 +18,7 @@ Go-based email campaign management system with a web frontend. Manages email cam
 
 ## Project Structure
 ```
-Ghost-Senderzip/Ghost-Senderzip/backend/
+./backend/
 ├── cmd/server/main.go          # Entry point
 ├── configs/config.yaml         # App configuration
 ├── internal/
@@ -83,5 +83,5 @@ Ghost-Senderzip/Ghost-Senderzip/backend/
 - **`POST /api/v1/proxies/bulk/delete-unhealthy`**: Endpoint implemented in proxy handler and repository
 
 ## Workflow
-- **Start application**: `cd Ghost-Senderzip/Ghost-Senderzip/backend && go build -o server ./cmd/server/ && ./server`
+- **Start application**: `cd ./backend && go build -o server ./cmd/server/ && ./server`
 - Listens on port 5000 (webview)

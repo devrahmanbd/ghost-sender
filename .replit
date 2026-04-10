@@ -23,7 +23,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd Ghost-Senderzip/Ghost-Senderzip/backend && go build -o server ./cmd/server/ && ./server"
+args = "cd ./backend && go build -o server ./cmd/server/ && ./server"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
